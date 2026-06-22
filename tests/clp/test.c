@@ -261,37 +261,37 @@ static void test_init_option_raw_rejects_null_names(void)
 
 static void _null_init_opnd_raw_null_operand(void)
 {
-    clp_init_opnd_raw(NULL, "file", NULL, false, OPND_ACT_SET, (Value){0}, TYPE_STR, false);
+    clp_init_operand_raw(NULL, "file", NULL, false, OPND_ACT_SET, (Value){0}, TYPE_STR, false);
 }
 static void test_init_opnd_raw_rejects_null_operand(void)
 {
     ChildResult r = run_child(_null_init_opnd_raw_null_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
-    D_TEST_NOT_NULL(strstr(r.err, "invalid argument: null argument to clp_init_opnd_raw"));
+    D_TEST_NOT_NULL(strstr(r.err, "invalid argument: null argument to clp_init_operand_raw"));
 }
 
 static void _null_init_opnd_raw_null_name(void)
 {
     Operand op;
-    clp_init_opnd_raw(&op, NULL, NULL, false, OPND_ACT_SET, (Value){0}, TYPE_STR, false);
+    clp_init_operand_raw(&op, NULL, NULL, false, OPND_ACT_SET, (Value){0}, TYPE_STR, false);
 }
 static void test_init_opnd_raw_rejects_null_name(void)
 {
     ChildResult r = run_child(_null_init_opnd_raw_null_name);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
-    D_TEST_NOT_NULL(strstr(r.err, "invalid argument: null argument to clp_init_opnd_raw"));
+    D_TEST_NOT_NULL(strstr(r.err, "invalid argument: null argument to clp_init_operand_raw"));
 }
 
 static void _null_init_opnd_raw_empty_name(void)
 {
     Operand op;
-    clp_init_opnd_raw(&op, "", NULL, false, OPND_ACT_SET, (Value){0}, TYPE_STR, false);
+    clp_init_operand_raw(&op, "", NULL, false, OPND_ACT_SET, (Value){0}, TYPE_STR, false);
 }
 static void test_init_opnd_raw_rejects_empty_name(void)
 {
     ChildResult r = run_child(_null_init_opnd_raw_empty_name);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
-    D_TEST_NOT_NULL(strstr(r.err, "invalid argument: null argument to clp_init_opnd_raw"));
+    D_TEST_NOT_NULL(strstr(r.err, "invalid argument: null argument to clp_init_operand_raw"));
 }
 
 static void test_get_option_by_short_returns_null_for_null_command(void)

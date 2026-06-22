@@ -125,31 +125,31 @@
     clp_init_option_raw(opt, ln, sn, desc, false, OPT_ACT_KV, (Value){0}, TYPE_STR, required, glob)
 
 #define clp_init_opnd(op, name, description, type, required) \
-    clp_init_opnd_raw(op, name, description, false, OPND_ACT_SET, (Value){0}, type, required)
+    clp_init_operand_raw(op, name, description, false, OPND_ACT_SET, (Value){0}, type, required)
 
 #define clp_init_opnd_default_long(op, name, desc, def, req) \
-    clp_init_opnd_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_long = (def)}, TYPE_LONG, req)
+    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_long = (def)}, TYPE_LONG, req)
 
 #define clp_init_opnd_default_bool(op, name, desc, def, req) \
-    clp_init_opnd_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_bool = (def)}, TYPE_BOOL, req)
+    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_bool = (def)}, TYPE_BOOL, req)
 
 #define clp_init_opnd_default_usize(op, name, desc, def, req) \
-    clp_init_opnd_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_usize = (def)}, TYPE_USIZE, req)
+    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_usize = (def)}, TYPE_USIZE, req)
 
 #define clp_init_opnd_default_str(op, name, desc, def, req) \
-    clp_init_opnd_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
+    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
 
 #define clp_init_opnd_default_char(op, name, desc, def, req) \
-    clp_init_opnd_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_char = (def)}, TYPE_CHAR, req)
+    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_char = (def)}, TYPE_CHAR, req)
 
 #define clp_init_opnd_default_double(op, name, desc, def, req) \
-    clp_init_opnd_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_double = (def)}, TYPE_DOUBLE, req)
+    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_double = (def)}, TYPE_DOUBLE, req)
 
 #define clp_init_opnd_list(op, name, desc, required) \
-    clp_init_opnd_raw(op, name, desc, false, OPND_ACT_LIST, (Value){0}, TYPE_STR, required)
+    clp_init_operand_raw(op, name, desc, false, OPND_ACT_LIST, (Value){0}, TYPE_STR, required)
 
 #define clp_init_opnd_kv(op, name, desc, required) \
-    clp_init_opnd_raw(op, name, desc, false, OPND_ACT_KV, (Value){0}, TYPE_STR, required)
+    clp_init_operand_raw(op, name, desc, false, OPND_ACT_KV, (Value){0}, TYPE_STR, required)
 
 typedef enum Type
 {
@@ -311,7 +311,7 @@ void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *d
  *
  * op and name must not be NULL. Exits on an empty or invalid name.
  */
-void clp_init_opnd_raw(Operand *op, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required);
+void clp_init_operand_raw(Operand *op, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required);
 
 /* Parse argv against the command tree rooted at root.
  *

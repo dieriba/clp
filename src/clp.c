@@ -90,7 +90,7 @@ void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *d
     opt->has_args = !(type == TYPE_BOOL || action == OPT_ACT_COUNT);
 }
 
-void clp_init_opnd_raw(Operand *operand, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required)
+void clp_init_operand_raw(Operand *operand, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required)
 {
     assert(operand != NULL);
     assert(name != NULL);

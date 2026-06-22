@@ -232,7 +232,7 @@ void clp_init_option_raw(Option  *opt, char *long_name, char *short_name,
                          OptAction action, Value value,
                          Type type, bool required, bool global);
 
-void clp_init_opnd_raw  (Operand *op,  char *name, char *description,
+void clp_init_operand_raw  (Operand *op,  char *name, char *description,
                          bool has_default_value,
                          OpndAction action, Value value,
                          Type type, bool required);
