@@ -25,7 +25,7 @@ Command *clp_new_command(int code, char *name, char *description)
     Command *command = malloc(sizeof(Command));
 
     if (command == NULL)
-        clp_eprint_exit("out of memory\n");
+        clp_exit_out_of_memory();
 
     assert(name != NULL);
 
@@ -36,7 +36,7 @@ Command *clp_new_command(int code, char *name, char *description)
 
     if (d_dyn_array_default_ptr_arr_init(&command->sub_commands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->options, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK ||
         d_dyn_array_default_ptr_arr_init(&command->extra, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->operands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
-        clp_eprint_exit("out of memory\n");
+        clp_exit_out_of_memory();
     return command;
 }
 
@@ -73,12 +73,12 @@ void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *d
     if (has_default_value == false && action == OPT_ACT_LIST)
     {
         if (d_dyn_array_init(&opt->value.value_list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
-            clp_eprint_exit("out of memory\n");
+            clp_exit_out_of_memory();
     }
     else if (has_default_value == false && action == OPT_ACT_KV)
     {
         if (d_unordered_map_init_not_owned_d_string_view_key(&opt->value.value_kv, sizeof(DStringView), 1, NULL))
-            clp_eprint_exit("out of memory\n");
+            clp_exit_out_of_memory();
     }
     else
         opt->value = value;
@@ -105,12 +105,12 @@ void clp_init_operand_raw(Operand *operand, char *name, char *description, bool 
     if (has_default_value == false && action == OPND_ACT_LIST)
     {
         if (d_dyn_array_init(&operand->value.value_list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
-            clp_eprint_exit("out of memory\n");
+            clp_exit_out_of_memory();
     }
     else if (has_default_value == false && action == OPND_ACT_KV)
     {
         if (d_unordered_map_init_not_owned_d_string_view_key(&operand->value.value_kv, sizeof(DStringView), 1, NULL))
-            clp_eprint_exit("out of memory\n");
+            clp_exit_out_of_memory();
     }
     else
         operand->value = value;
@@ -196,7 +196,7 @@ void clp_add_command_sub_command(Command *command, Command *sub_command)
 
     sub_command->parent_command = command;
     if (d_dyn_array_push_back_ptr(&command->sub_commands, sub_command) != D_OK)
-        clp_eprint_exit("out of memory\n");
+        clp_exit_out_of_memory();
 }
 
 void clp_add_command_option(Command *command, Option *command_option)
@@ -209,7 +209,7 @@ void clp_add_command_option(Command *command, Option *command_option)
     if (clp_get_option_by_short(command, command_option->short_name))
         clp_eprint_exit("command %s: option '-%c' already registered\n", command->name.data, command_option->short_name);
     if (d_dyn_array_push_back_ptr(&command->options, command_option) != D_OK)
-        clp_eprint_exit("out of memory\n");
+        clp_exit_out_of_memory();
 }
 
 void clp_add_command_operand(Command *command, Operand *command_operand)
@@ -229,7 +229,7 @@ void clp_add_command_operand(Command *command, Operand *command_operand)
     else if (last_operand != NULL && (last_operand->required == false && command_operand->required == true))
         clp_eprint_exit("command %s: required operand '%s' cannot follow optional operand '%s'\n", command->name.data, command_operand->name.data, last_operand->name.data);
     if (d_dyn_array_push_back_ptr(&command->operands, command_operand) != D_OK)
-        clp_eprint_exit("out of memory\n");
+        clp_exit_out_of_memory();
 }
 
 void clp_parse_args(Command *root, char **argv, Command **command)

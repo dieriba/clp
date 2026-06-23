@@ -225,7 +225,7 @@ static void command_collect_parent_commands_options(Command *command)
         {
             Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(curr_opts, i);
             if (opt->global && d_dyn_array_push_back_ptr(opts, opt) != D_OK)
-                clp_eprint_exit("out of memory\n");
+                clp_exit_out_of_memory();
         }
     }
 }
