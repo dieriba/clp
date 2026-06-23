@@ -48,9 +48,13 @@ void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *d
     char shrt_name = FLAG_SHORT_OPT_NOT_SET;
     opt->long_name = d_string_view_from_c_string(long_name);
 
-    if (short_name && is_valid_short(*short_name) == false)
+    if (short_name)
+    {
+        if (is_valid_short(*short_name) == false)
             clp_invalid_arg_exit("'-%c' is not a valid option name\na short option must be a single alphanumeric character [a-z A-Z 0-9]\n", *short_name);
-            if (long_name)
+        shrt_name = *short_name;
+    }
+    if (long_name)
     {
         if (PSEUDO_FAST_STRCMP(long_name, HELP_OPT))
             clp_invalid_arg_exit("%s is a reserved option\n", long_name);
