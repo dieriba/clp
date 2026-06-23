@@ -3,6 +3,7 @@
 #include "clp.h"
 #include "d_dyn_array.h"
 #include "d_types.h"
+#include <stdlib.h>
 
 static void free_command_options(Command *root)
 {
@@ -14,6 +15,7 @@ static void free_command_options(Command *root)
             d_unordered_map_destroy(&opt->value.value_kv);
         else if (opt->action == OPT_ACT_LIST)
             d_dyn_array_destroy(&opt->value.value_list);
+        free(opt);
     }
     d_dyn_array_destroy(&root->options);
 }

@@ -40,11 +40,13 @@ Command *clp_new_command(int code, char *name, char *description)
     return command;
 }
 
-void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global)
+Option *clp_new_option_raw(char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global)
 {
-    assert(opt != NULL);
     assert(long_name != NULL || short_name != NULL);
 
+    Option *opt = malloc(sizeof(Option));
+    if (opt == NULL)
+        clp_exit_out_of_memory();
     char shrt_name = FLAG_SHORT_OPT_NOT_SET;
     opt->long_name = d_string_view_from_c_string(long_name);
 
@@ -92,6 +94,7 @@ void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *d
     opt->required          = required;
     opt->global            = global;
     opt->has_args          = !(type == TYPE_BOOL || action == OPT_ACT_COUNT);
+    return opt;
 }
 
 void clp_init_operand_raw(Operand *operand, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required)

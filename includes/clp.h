@@ -63,12 +63,11 @@
  *
  * QUICK START
  * -----------
- *   Command *root = clp_new_command(0, "prog", "my program");
- *   Option verbose;
- *   Operand file;
- *   clp_init_option(&verbose, "verbose", "v", "enable verbose output", TYPE_BOOL, false, false);
+ *   Command *root    = clp_new_command(0, "prog", "my program");
+ *   Option  *verbose = clp_new_option("verbose", "v", "enable verbose output", TYPE_BOOL, false, false);
+ *   Operand  file;
  *   clp_init_opnd(&file, "file", "input file", TYPE_STR, true);
- *   clp_add_command_option(root, &verbose);
+ *   clp_add_command_option(root, verbose);
  *   clp_add_command_operand(root, &file);
  *   Command *cmd = NULL;
  *   clp_parse_args(root, argv, &cmd);
@@ -87,40 +86,31 @@
 #ifndef CLP_H
 #define CLP_H
 
-#include "d_types.h"
 #include "d_dyn_array.h"
 #include "d_string_view.h"
+#include "d_types.h"
 #include "d_unordered_map.h"
 
-#define clp_init_option(opt, long_name, short_name, description, type, required, global) \
-    clp_init_option_raw(opt, long_name, short_name, description, false, OPT_ACT_SET, (Value){0}, type, required, global)
+#define clp_new_option(long_name, short_name, description, type, required, global) clp_new_option_raw(long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global)
 
-#define clp_init_option_default_long(opt, ln, sn, desc, def, req, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, true, OPT_ACT_SET, (Value){.value_long = (def)}, TYPE_LONG, req, glob)
+#define clp_new_option_default_long(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob)
 
-#define clp_init_option_default_bool(opt, ln, sn, desc, def, req, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, true, OPT_ACT_SET, (Value){.value_bool = (def)}, TYPE_BOOL, req, glob)
+#define clp_new_option_default_bool(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob)
 
-#define clp_init_option_default_usize(opt, ln, sn, desc, def, req, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, true, OPT_ACT_SET, (Value){.value_usize = (def)}, TYPE_USIZE, req, glob)
+#define clp_new_option_default_usize(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob)
 
-#define clp_init_option_default_str(opt, ln, sn, desc, def, req, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, true, OPT_ACT_SET, (Value){.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob)
+#define clp_new_option_default_str(ln, sn, desc, def, req, glob)                                                                                                                                       \
+    clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob)
 
-#define clp_init_option_default_char(opt, ln, sn, desc, def, req, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, true, OPT_ACT_SET, (Value){.value_char = (def)}, TYPE_CHAR, req, glob)
+#define clp_new_option_default_char(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob)
 
-#define clp_init_option_default_double(opt, ln, sn, desc, def, req, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, true, OPT_ACT_SET, (Value){.value_double = (def)}, TYPE_DOUBLE, req, glob)
+#define clp_new_option_default_double(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob)
 
-#define clp_init_option_count(opt, ln, sn, desc, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, false, OPT_ACT_COUNT, (Value){0}, TYPE_USIZE, false, glob)
+#define clp_new_option_count(ln, sn, desc, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_COUNT, (Value) {0}, TYPE_USIZE, false, glob)
 
-#define clp_init_option_list(opt, ln, sn, desc, required, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, false, OPT_ACT_LIST, (Value){0}, TYPE_STR, required, glob)
+#define clp_new_option_list(ln, sn, desc, required, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob)
 
-#define clp_init_option_kv(opt, ln, sn, desc, required, glob) \
-    clp_init_option_raw(opt, ln, sn, desc, false, OPT_ACT_KV, (Value){0}, TYPE_STR, required, glob)
+#define clp_new_option_kv(ln, sn, desc, required, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob)
 
 #define clp_init_opnd(op, name, description, type, required) \
     clp_init_operand_raw(op, name, description, false, OPND_ACT_SET, (Value){0}, type, required)
@@ -177,54 +167,54 @@ typedef enum OpndAction
 typedef union Value
 {
     DUnorderedMap value_kv;
-    DDynArray value_list;
-    DStringView value_d_string_view;
-    usize value_usize;
-    double value_double;
-    long value_long;
-    bool value_bool;
-    char value_char;
+    DDynArray     value_list;
+    DStringView   value_d_string_view;
+    usize         value_usize;
+    double        value_double;
+    long          value_long;
+    bool          value_bool;
+    char          value_char;
 } Value;
 
 typedef struct Operand
 {
-    Value value;
+    Value       value;
     DStringView name;
-    char *description;
-    OpndAction action;
-    Type type;
-    bool required;
-    bool has_default_value;
-    bool value_set;
+    char       *description;
+    OpndAction  action;
+    Type        type;
+    bool        required;
+    bool        has_default_value;
+    bool        value_set;
 } Operand;
 
 typedef struct Option
 {
-    Value value;
+    Value       value;
     DStringView long_name;
-    char *description;
-    OptAction action;
-    Type type;
-    char short_name;
-    bool required;
-    bool has_default_value;
-    bool value_set;
-    bool global;
-    bool has_args;
+    char       *description;
+    OptAction   action;
+    Type        type;
+    char        short_name;
+    bool        required;
+    bool        has_default_value;
+    bool        value_set;
+    bool        global;
+    bool        has_args;
 } Option;
 
 typedef struct Command Command;
 
 struct Command
 {
-    DDynArray options;
-    DDynArray operands;
-    DDynArray sub_commands;
-    DDynArray extra;
+    DDynArray   options;
+    DDynArray   operands;
+    DDynArray   sub_commands;
+    DDynArray   extra;
     DStringView name;
-    Command *parent_command;
-    char *description;
-    int code;
+    Command    *parent_command;
+    char       *description;
+    int         code;
 };
 
 /* Allocate and initialise a new Command on the heap; returns the pointer.
@@ -268,9 +258,11 @@ void clp_add_command_option(Command *command, Option *command_option);
  */
 void clp_add_command_operand(Command *command, Operand *command_operand);
 
-/* Low-level option initializer — prefer the clp_init_option* macros.
+/* Low-level option allocator — prefer the clp_new_option* macros.
  *
- *   opt               — caller-owned storage for the Option.
+ * Allocates a new Option on the heap and returns the pointer.  The returned
+ * Option is owned by the command it is added to; clp_cleanup frees it.
+ *
  *   long_name         — long option name without the "--" prefix, or NULL for
  *                       a short-only option.  Must start with a letter and
  *                       contain only [a-z A-Z 0-9 -].  "help" is reserved.
@@ -287,12 +279,12 @@ void clp_add_command_operand(Command *command, Operand *command_operand);
  *   required          — if true, clp_parse_args exits when the option is absent.
  *   global            — if true, the option is visible in all descendant commands.
  *
- * opt must not be NULL. At least one of long_name or short_name must not be NULL.
+ * At least one of long_name or short_name must not be NULL.
  * Exits on invalid names, reserved name, or OPT_ACT_COUNT paired with a type other than TYPE_USIZE.
  */
-void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global);
+Option *clp_new_option_raw(char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global);
 
-/* Low-level operand initializer — prefer the clp_init_opnd* macros.
+/* Low-level operand initializer — prefer the clp_new_opnd* macros.
  *
  *   op                — caller-owned storage for the Operand.
  *   name              — operand name shown in usage and --help (e.g. "file").
