@@ -97,10 +97,14 @@ Option *clp_new_option_raw(char *long_name, char *short_name, char *description,
     return opt;
 }
 
-void clp_init_operand_raw(Operand *operand, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required)
+Operand *clp_new_operand_raw(char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required)
 {
-    assert(operand != NULL);
     assert(name != NULL);
+
+    Operand *operand = malloc(sizeof(Operand));
+
+    if (operand == NULL)
+        clp_exit_out_of_memory();
 
     operand->name = d_string_view_from_c_string(name);
     exit_if_not_valid_long_opt_name(operand->name);
@@ -124,6 +128,7 @@ void clp_init_operand_raw(Operand *operand, char *name, char *description, bool 
     operand->has_default_value = has_default_value;
     operand->type              = type;
     operand->required          = required;
+    return operand;
 }
 
 static inline bool eq_short_opt(Option *opt, void *ctx)

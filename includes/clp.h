@@ -65,14 +65,13 @@
  * -----------
  *   Command *root    = clp_new_command(0, "prog", "my program");
  *   Option  *verbose = clp_new_option("verbose", "v", "enable verbose output", TYPE_BOOL, false, false);
- *   Operand  file;
- *   clp_init_operand(&file, "file", "input file", TYPE_STR, true);
+ *   Operand *file    = clp_new_operand("file", "input file", TYPE_STR, true);
  *   clp_add_command_option(root, verbose);
- *   clp_add_command_operand(root, &file);
+ *   clp_add_command_operand(root, file);
  *   Command *cmd = NULL;
  *   clp_parse_args(root, argv, &cmd);
- *   if (verbose.value_set) { ... }
- *   printf("%s\n", file.value.value_d_string_view.data);
+ *   if (verbose->value_set) { ... }
+ *   printf("%s\n", file->value.value_d_string_view.data);
  *   clp_cleanup(root);
  *
  * ERROR HANDLING
@@ -112,24 +111,24 @@
 
 #define clp_new_option_kv(ln, sn, desc, required, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob)
 
-#define clp_init_operand(op, name, description, type, required) clp_init_operand_raw(op, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required)
+#define clp_new_operand(name, description, type, required) clp_new_operand_raw(name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required)
 
-#define clp_init_operand_default_long(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req)
+#define clp_new_operand_default_long(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req)
 
-#define clp_init_operand_default_bool(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req)
+#define clp_new_operand_default_bool(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req)
 
-#define clp_init_operand_default_usize(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req)
+#define clp_new_operand_default_usize(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req)
 
-#define clp_init_operand_default_str(op, name, desc, def, req)                                                                                                                                         \
-    clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
+#define clp_new_operand_default_str(name, desc, def, req)                                                                                                                                              \
+    clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
 
-#define clp_init_operand_default_char(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req)
+#define clp_new_operand_default_char(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req)
 
-#define clp_init_operand_default_double(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req)
+#define clp_new_operand_default_double(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req)
 
-#define clp_init_operand_list(op, name, desc, required) clp_init_operand_raw(op, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required)
+#define clp_new_operand_list(name, desc, required) clp_new_operand_raw(name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required)
 
-#define clp_init_operand_kv(op, name, desc, required) clp_init_operand_raw(op, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required)
+#define clp_new_operand_kv(name, desc, required) clp_new_operand_raw(name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required)
 
 typedef enum Type
 {
@@ -276,24 +275,26 @@ void clp_add_command_operand(Command *command, Operand *command_operand);
  */
 Option *clp_new_option_raw(char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global);
 
-/* Low-level operand initializer — prefer the clp_new_opnd* macros.
+/* Low-level operand allocator — prefer the clp_new_operand* macros.
  *
- *   op                — caller-owned storage for the Operand.
+ * Allocates a new Operand on the heap and returns the pointer.  The returned
+ * Operand is owned by the command it is added to; clp_cleanup frees it.
+ *
  *   name              — operand name shown in usage and --help (e.g. "file").
  *                       Must not be NULL or empty.
  *   description       — help text; NULL is accepted.
  *   has_default_value — pass true when value carries a pre-filled default.
  *                       Pass false for LIST/KV so the library allocates the
  *                       internal collection.
- *   action            — OPND_ACT_SET | OPND_ACT_LIST | OPND_ACT_KV.
+ *   action            — OPERAND_ACT_SET | OPERAND_ACT_LIST | OPERAND_ACT_KV.
  *   value             — initial/default Value; ignored for LIST and KV when
  *                       has_default_value is false.
  *   type              — value type.
  *   required          — if true, clp_parse_args exits when the operand is absent.
  *
- * op and name must not be NULL. Exits on an empty or invalid name.
+ * name must not be NULL. Exits on an empty or invalid name.
  */
-void clp_init_operand_raw(Operand *op, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required);
+Operand *clp_new_operand_raw(char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required);
 
 /* Parse argv against the command tree rooted at root.
  *

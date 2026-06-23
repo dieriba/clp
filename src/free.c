@@ -31,6 +31,7 @@ static void free_command_operands(Command *root)
             d_unordered_map_destroy(&operand->value.value_kv);
         else if (operand->action == OPERAND_ACT_LIST)
             d_dyn_array_destroy(&operand->value.value_list);
+        free(operand);
     }
 
     d_dyn_array_destroy(&root->operands);

@@ -66,11 +66,11 @@ An option marked `global=true` is visible to every descendant command. It is reg
 
 ## Operand actions
 
-| Action             | Macro                   | Value field                  | Notes                                  |
-| ------------------ | ----------------------- | ---------------------------- | -------------------------------------- |
-| `OPERAND_ACT_SET`  | `clp_init_operand`      | type-dependent               | one positional value                   |
-| `OPERAND_ACT_LIST` | `clp_init_operand_list` | `value_list` (`DDynArray`)   | consumes all remaining positional args |
-| `OPERAND_ACT_KV`   | `clp_init_operand_kv`   | `value_kv` (`DUnorderedMap`) | `key=value` positional arg             |
+| Action             | Macro                  | Value field                  | Notes                                  |
+| ------------------ | ---------------------- | ---------------------------- | -------------------------------------- |
+| `OPERAND_ACT_SET`  | `clp_new_operand`      | type-dependent               | one positional value                   |
+| `OPERAND_ACT_LIST` | `clp_new_operand_list` | `value_list` (`DDynArray`)   | consumes all remaining positional args |
+| `OPERAND_ACT_KV`   | `clp_new_operand_kv`   | `value_kv` (`DUnorderedMap`) | `key=value` positional arg             |
 
 ## Value types
 
@@ -100,7 +100,7 @@ int main(int argc, char **argv)
 
     clp_init_option(&verbose, "verbose", "v", "enable verbose output",
                     TYPE_BOOL, false, false);
-    clp_init_operand(&file, "file", "input file", TYPE_STR, true);
+    clp_new_operand(&file, "file", "input file", TYPE_STR, true);
 
     clp_add_command_option(root, &verbose);
     clp_add_command_operand(root, &file);
@@ -174,7 +174,7 @@ DStringView *val = d_unordered_map_get(&env.value.value_kv, &key);
 
 ```c
 Operand files;
-clp_init_operand_list(&files, "files", "source files", false);
+clp_new_operand_list(&files, "files", "source files", false);
 clp_add_command_operand(&root, &files);
 /* prog a.c b.c c.c → files.value.value_list has 3 elements */
 ```
@@ -262,21 +262,21 @@ clp_init_option_kv(opt, ln, sn, desc, required, glob)
 
 ```c
 /* OPERAND_ACT_SET — no default */
-clp_init_operand(op, name, desc, type, required)
+clp_new_operand(op, name, desc, type, required)
 
 /* OPERAND_ACT_SET — with default */
-clp_init_operand_default_bool  (op, name, desc, def, req)
-clp_init_operand_default_char  (op, name, desc, def, req)
-clp_init_operand_default_str   (op, name, desc, def, req)
-clp_init_operand_default_long  (op, name, desc, def, req)
-clp_init_operand_default_usize (op, name, desc, def, req)
-clp_init_operand_default_double(op, name, desc, def, req)
+clp_new_operand_default_bool  (op, name, desc, def, req)
+clp_new_operand_default_char  (op, name, desc, def, req)
+clp_new_operand_default_str   (op, name, desc, def, req)
+clp_new_operand_default_long  (op, name, desc, def, req)
+clp_new_operand_default_usize (op, name, desc, def, req)
+clp_new_operand_default_double(op, name, desc, def, req)
 
 /* OPERAND_ACT_LIST */
-clp_init_operand_list(op, name, desc, required)
+clp_new_operand_list(op, name, desc, required)
 
 /* OPERAND_ACT_KV */
-clp_init_operand_kv(op, name, desc, required)
+clp_new_operand_kv(op, name, desc, required)
 ```
 
 ---
