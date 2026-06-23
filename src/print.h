@@ -2,6 +2,7 @@
 #define PRINT_H
 
 #include "clp.h"
+
 #include <stdio.h>
 
 bool print_command_required_args_if_miss_required_args(Command *root);

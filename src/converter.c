@@ -1,4 +1,5 @@
 #include "converter.h"
+
 #include <errno.h>
 #define TRUE_STR "true"
 #define FALSE_STR "false"
@@ -6,7 +7,7 @@
 char *s_to_usize(const char *s, Value *value)
 {
     char *endptr;
-    errno = 0;
+    errno              = 0;
     value->value_usize = strtoull(s, &endptr, 10);
 
     if (errno == ERANGE)
@@ -20,7 +21,7 @@ char *s_to_usize(const char *s, Value *value)
 char *s_to_long(const char *s, Value *value)
 {
     char *endptr;
-    errno = 0;
+    errno              = 0;
     value->value_usize = strtoll(s, &endptr, 10);
 
     if (errno == ERANGE)

@@ -1,16 +1,16 @@
+#include "clp.h"
+
+#include "converter.h"
+#include "d_general_lib.h"
+#include "d_hash_set.h"
+#include "d_unordered_map.h"
+#include "free.h"
+#include "parse.h"
+#include "shared.h"
+
+#include <assert.h>
 #include <ctype.h>
 #include <string.h>
-#include <assert.h>
-
-#include "d_unordered_map.h"
-#include "d_hash_set.h"
-#include "d_general_lib.h"
-
-#include "shared.h"
-#include "clp.h"
-#include "converter.h"
-#include "parse.h"
-#include "free.h"
 
 #define NO_DESC "no associated description"
 #define START_OPT_CHAR '-'
@@ -27,20 +27,18 @@ void clp_init_command(Command *command, int code, char *name, char *description)
     assert(command != NULL);
     assert(name != NULL);
 
-    command->name = d_string_view_from_c_string(name);
-    command->description = description == NULL ? NO_DESC : description;
-    command->code = code;
+    command->name           = d_string_view_from_c_string(name);
+    command->description    = description == NULL ? NO_DESC : description;
+    command->code           = code;
     command->parent_command = NULL;
 
-    if (d_dyn_array_default_ptr_arr_init(&command->sub_commands, (DestroyElemFn)_free_command, NULL, RAW_BUF_OPT_NONE) != D_OK ||
-        d_dyn_array_default_ptr_arr_init(&command->options, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK ||
-        d_dyn_array_default_ptr_arr_init(&command->extra, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK ||
+    if (d_dyn_array_default_ptr_arr_init(&command->sub_commands, (DestroyElemFn) _free_command, NULL, RAW_BUF_OPT_NONE) != D_OK ||
+        d_dyn_array_default_ptr_arr_init(&command->options, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->extra, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK ||
         d_dyn_array_default_ptr_arr_init(&command->operands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
         clp_eprint_exit("out of memory\n");
 }
 
-void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *description, bool has_default_value,
-                         OptAction action, Value value, Type type, bool required, bool global)
+void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global)
 {
     assert(opt != NULL);
     assert(long_name != NULL || short_name != NULL);
@@ -79,15 +77,15 @@ void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *d
     else
         opt->value = value;
 
-    opt->value_set = false;
-    opt->action = action;
-    opt->short_name = shrt_name;
-    opt->description = description == NULL ? NO_DESC : description;
+    opt->value_set         = false;
+    opt->action            = action;
+    opt->short_name        = shrt_name;
+    opt->description       = description == NULL ? NO_DESC : description;
     opt->has_default_value = has_default_value;
-    opt->type = type;
-    opt->required = required;
-    opt->global = global;
-    opt->has_args = !(type == TYPE_BOOL || action == OPT_ACT_COUNT);
+    opt->type              = type;
+    opt->required          = required;
+    opt->global            = global;
+    opt->has_args          = !(type == TYPE_BOOL || action == OPT_ACT_COUNT);
 }
 
 void clp_init_operand_raw(Operand *operand, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required)
@@ -111,28 +109,28 @@ void clp_init_operand_raw(Operand *operand, char *name, char *description, bool 
     else
         operand->value = value;
 
-    operand->value_set = false;
-    operand->action = action;
-    operand->description = description == NULL ? NO_DESC : description;
+    operand->value_set         = false;
+    operand->action            = action;
+    operand->description       = description == NULL ? NO_DESC : description;
     operand->has_default_value = has_default_value;
-    operand->type = type;
-    operand->required = required;
+    operand->type              = type;
+    operand->required          = required;
 }
 
 static inline bool eq_short_opt(Option *opt, void *ctx)
 {
-    return opt->short_name == *(char *)ctx;
+    return opt->short_name == *(char *) ctx;
 }
 
 static inline bool eq_long_opt(Option *opt, void *ctx)
 {
-    return d_string_view_compare(opt->long_name, *((DStringView *)ctx));
+    return d_string_view_compare(opt->long_name, *((DStringView *) ctx));
 }
 
 static Option *get_option_by_predicate(Command *command, void *ctx, bool (*predicate)(Option *, void *))
 {
     DDynArray *opts = &command->options;
-    usize size = d_dyn_array_get_size(opts);
+    usize      size = d_dyn_array_get_size(opts);
     for (usize i = 0; i < size; i++)
     {
         Option *option = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
@@ -145,7 +143,7 @@ static Option *get_option_by_predicate(Command *command, void *ctx, bool (*predi
 static Operand *get_command_opnd_by_name(Command *command, DStringView name)
 {
     DDynArray *operands = &command->operands;
-    usize size = d_dyn_array_get_size(operands);
+    usize      size     = d_dyn_array_get_size(operands);
     for (usize i = 0; i < size; i++)
     {
         Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
@@ -172,7 +170,7 @@ Operand *clp_get_operand(Command *command, DStringView opnd_name)
 {
     assert(command != NULL);
     DDynArray *operands = &command->operands;
-    usize size = d_dyn_array_get_size(operands);
+    usize      size     = d_dyn_array_get_size(operands);
     for (usize i = 0; i < size; i++)
     {
         Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
@@ -216,9 +214,9 @@ void clp_add_command_operand(Command *command, Operand *command_operand)
     if (d_dyn_array_get_size(&(command->sub_commands)) > 0)
         clp_invalid_arg_exit("command '%s' cannot have both operands and subcommands\n", command->name.data);
 
-    DDynArray *ops = &command->operands;
-    usize size = d_dyn_array_get_size(ops);
-    Operand *last_operand = size == 0 ? NULL : d_dyn_array_get_elem_deref_addr_at_safe(ops, size - 1);
+    DDynArray *ops          = &command->operands;
+    usize      size         = d_dyn_array_get_size(ops);
+    Operand   *last_operand = size == 0 ? NULL : d_dyn_array_get_elem_deref_addr_at_safe(ops, size - 1);
 
     if (get_command_opnd_by_name(command, command_operand->name))
         clp_eprint("warning: operand name '%s' already used, consider a more descriptive name\n", command_operand->name.data);
@@ -245,7 +243,7 @@ void clp_cleanup(Command *root)
 {
     assert(root != NULL);
     DDynArray *sub_commands = &root->sub_commands;
-    usize size = d_dyn_array_get_size(sub_commands);
+    usize      size         = d_dyn_array_get_size(sub_commands);
     for (usize i = 0; i < size; i++)
         clp_cleanup(d_dyn_array_get_elem_deref_addr_at_safe(sub_commands, i));
     free_command(root);
