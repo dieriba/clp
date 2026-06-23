@@ -35,7 +35,7 @@ $(BUILD_LIB): $(OBJS)
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) -DNDEBUG=1 $(CFLAGS) -c $< -o $@
 
 $(C_LIB):
 	$(MAKE) -C $(C_LIB_DIR)
