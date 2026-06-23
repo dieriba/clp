@@ -104,7 +104,7 @@ static void set_opt_value(Command *root, Option *opt, const char *operand, char 
         opt->value_set = true;
 }
 
-static char **set_opnd_value(Command *root, usize cursor, char *raw_operand, char **argv, bool consume_all)
+static char **set_operand_value(Command *root, usize cursor, char *raw_operand, char **argv, bool consume_all)
 {
     DDynArray *operands      = &root->operands;
     usize      operands_size = d_dyn_array_get_size(operands);
@@ -119,13 +119,13 @@ static char **set_opnd_value(Command *root, usize cursor, char *raw_operand, cha
 
     switch (operand->action)
     {
-    case OPND_ACT_SET:
+    case OPERAND_ACT_SET:
         char *err_msg = conversion_fn(raw_operand, &operand->value);
         if (err_msg)
             clp_eprint_exit("command %s: invalid value '%s' for '<%s>': %s", root->name.data, raw_operand, operand->name.data, err_msg);
         argv++;
         break;
-    case OPND_ACT_LIST:
+    case OPERAND_ACT_LIST:
         while (1)
         {
             DStringView list = d_string_view_from_c_string(raw_operand);
@@ -137,7 +137,7 @@ static char **set_opnd_value(Command *root, usize cursor, char *raw_operand, cha
                 break;
         }
         break;
-    case OPND_ACT_KV:
+    case OPERAND_ACT_KV:
         add_new_kv_pairs(root, &operand->value.value_kv, raw_operand, "", operand->name.data, (int) operand->name.size);
         argv++;
         break;
@@ -149,17 +149,17 @@ static char **set_opnd_value(Command *root, usize cursor, char *raw_operand, cha
     return argv;
 }
 
-static char **parse_remaining_operands(Command *root, usize *opnd_cursor, char **argv)
+static char **parse_remaining_operands(Command *root, usize *operand_cursor, char **argv)
 {
-    usize cursor = *opnd_cursor;
+    usize cursor = *operand_cursor;
     while (1)
     {
-        argv = set_opnd_value(root, cursor, *argv, argv, true);
+        argv = set_operand_value(root, cursor, *argv, argv, true);
         if (*argv == NULL)
             break;
         cursor++;
     }
-    *opnd_cursor = cursor;
+    *operand_cursor = cursor;
     return argv;
 }
 
@@ -199,13 +199,13 @@ static char **parse_short_opts(Command *root, char *short_opt, char **argv)
     return argv;
 }
 
-static char **interpret_hyphen(Command *root, char *arg, char **argv, usize *opnd_cusor)
+static char **interpret_hyphen(Command *root, char *arg, char **argv, usize *operand_cusor)
 {
     ++argv;
     if (STR_STARTS_WITH_HYPEN(arg))
     {
         if (arg[1] == 0)
-            argv = parse_remaining_operands(root, opnd_cusor, argv);
+            argv = parse_remaining_operands(root, operand_cusor, argv);
         else
             argv = parse_long_opt(root, &arg[1], argv);
     }
@@ -289,7 +289,7 @@ void parse(Command *root, char **argv, Command **command)
             continue;
         }
     PARSE_OPERAND:
-        argv = set_opnd_value(root, cmd_parsed_operand++, s, argv, false);
+        argv = set_operand_value(root, cmd_parsed_operand++, s, argv, false);
     }
 
     command_collect_parent_commands_options(root);

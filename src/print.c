@@ -31,7 +31,7 @@ static usize sub_cmd_name_width(Command *cmd)
     return cmd->name.size;
 }
 
-static usize opnd_name_width(Operand *op)
+static usize operand_name_width(Operand *op)
 {
     return op->name.size + 2; /* <name> */
 }
@@ -65,7 +65,7 @@ static usize max_col_width(Command *root)
     for (usize i = 0; i < size; i++)
     {
         Operand *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
-        usize    w  = opnd_name_width(op);
+        usize    w  = operand_name_width(op);
         if (w > max)
             max = w;
     }
@@ -174,7 +174,7 @@ void print_usage_line(FILE *stream, Command *command)
             if (operand->required == false)
                 continue;
             fprintf(stream, "<%s>", operand->name.data);
-            if (operand->action == OPND_ACT_LIST)
+            if (operand->action == OPERAND_ACT_LIST)
                 fprintf(stream, "...");
             fprintf(stream, " ");
         }

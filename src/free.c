@@ -3,6 +3,7 @@
 #include "clp.h"
 #include "d_dyn_array.h"
 #include "d_types.h"
+
 #include <stdlib.h>
 
 static void free_command_options(Command *root)
@@ -26,9 +27,9 @@ static void free_command_operands(Command *root)
     for (usize i = 0; i < operands->array.size; i++)
     {
         Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
-        if (operand->action == OPND_ACT_KV)
+        if (operand->action == OPERAND_ACT_KV)
             d_unordered_map_destroy(&operand->value.value_kv);
-        else if (operand->action == OPND_ACT_LIST)
+        else if (operand->action == OPERAND_ACT_LIST)
             d_dyn_array_destroy(&operand->value.value_list);
     }
 

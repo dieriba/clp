@@ -26,16 +26,16 @@ After `clp_parse_args`, the `Command **command` out-parameter points to the deep
 
 Named flags prefixed with `-` (short) or `--` (long). An option may have a short name, a long name, or both.
 
-| Syntax | Example |
-|--------|---------|
-| Short flag | `-v` |
-| Long flag | `--verbose` |
-| Short + value (inline) | `-ofile.txt` |
-| Short + value (next arg) | `-o file.txt` |
-| Long + value (inline) | `--output=file.txt` |
-| Long + value (next arg) | `--output file.txt` |
-| Combined short | `-abc`, `-abVALUE` — each char processed in order; bool/count options continue to the next char; a value-taking option consumes the rest of the token as its inline value |
-| Repeated count | `-vvv` or `-v -v -v` |
+| Syntax                   | Example                                                                                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Short flag               | `-v`                                                                                                                                                                      |
+| Long flag                | `--verbose`                                                                                                                                                               |
+| Short + value (inline)   | `-ofile.txt`                                                                                                                                                              |
+| Short + value (next arg) | `-o file.txt`                                                                                                                                                             |
+| Long + value (inline)    | `--output=file.txt`                                                                                                                                                       |
+| Long + value (next arg)  | `--output file.txt`                                                                                                                                                       |
+| Combined short           | `-abc`, `-abVALUE` — each char processed in order; bool/count options continue to the next char; a value-taking option consumes the rest of the token as its inline value |
+| Repeated count           | `-vvv` or `-v -v -v`                                                                                                                                                      |
 
 ### Operands
 
@@ -57,31 +57,31 @@ An option marked `global=true` is visible to every descendant command. It is reg
 
 ## Option actions
 
-| Action | Macro | Value field | Notes |
-|--------|-------|-------------|-------|
-| `OPT_ACT_SET` | `clp_init_option` | type-dependent | stores one value; `TYPE_BOOL` needs no argument |
-| `OPT_ACT_COUNT` | `clp_init_option_count` | `value_usize` | increments each occurrence; no argument |
-| `OPT_ACT_LIST` | `clp_init_option_list` | `value_list` (`DDynArray`) | comma-split into `DStringView` elements |
-| `OPT_ACT_KV` | `clp_init_option_kv` | `value_kv` (`DUnorderedMap`) | `key=value` pairs, comma-separated |
+| Action          | Macro                   | Value field                  | Notes                                           |
+| --------------- | ----------------------- | ---------------------------- | ----------------------------------------------- |
+| `OPT_ACT_SET`   | `clp_init_option`       | type-dependent               | stores one value; `TYPE_BOOL` needs no argument |
+| `OPT_ACT_COUNT` | `clp_init_option_count` | `value_usize`                | increments each occurrence; no argument         |
+| `OPT_ACT_LIST`  | `clp_init_option_list`  | `value_list` (`DDynArray`)   | comma-split into `DStringView` elements         |
+| `OPT_ACT_KV`    | `clp_init_option_kv`    | `value_kv` (`DUnorderedMap`) | `key=value` pairs, comma-separated              |
 
 ## Operand actions
 
-| Action | Macro | Value field | Notes |
-|--------|-------|-------------|-------|
-| `OPND_ACT_SET` | `clp_init_opnd` | type-dependent | one positional value |
-| `OPND_ACT_LIST` | `clp_init_opnd_list` | `value_list` (`DDynArray`) | consumes all remaining positional args |
-| `OPND_ACT_KV` | `clp_init_opnd_kv` | `value_kv` (`DUnorderedMap`) | `key=value` positional arg |
+| Action             | Macro                   | Value field                  | Notes                                  |
+| ------------------ | ----------------------- | ---------------------------- | -------------------------------------- |
+| `OPERAND_ACT_SET`  | `clp_init_operand`      | type-dependent               | one positional value                   |
+| `OPERAND_ACT_LIST` | `clp_init_operand_list` | `value_list` (`DDynArray`)   | consumes all remaining positional args |
+| `OPERAND_ACT_KV`   | `clp_init_operand_kv`   | `value_kv` (`DUnorderedMap`) | `key=value` positional arg             |
 
 ## Value types
 
-| Enum | C type | `Value` field | Notes |
-|------|--------|---------------|-------|
-| `TYPE_BOOL` | `bool` | `value_bool` | |
-| `TYPE_CHAR` | `char` | `value_char` | |
-| `TYPE_STR` | `DStringView` | `value_d_string_view` | `.data` is the null-terminated C string |
-| `TYPE_LONG` | `long` | `value_long` | |
-| `TYPE_USIZE` | `usize` | `value_usize` | |
-| `TYPE_DOUBLE` | `double` | `value_double` | |
+| Enum          | C type        | `Value` field         | Notes                                   |
+| ------------- | ------------- | --------------------- | --------------------------------------- |
+| `TYPE_BOOL`   | `bool`        | `value_bool`          |                                         |
+| `TYPE_CHAR`   | `char`        | `value_char`          |                                         |
+| `TYPE_STR`    | `DStringView` | `value_d_string_view` | `.data` is the null-terminated C string |
+| `TYPE_LONG`   | `long`        | `value_long`          |                                         |
+| `TYPE_USIZE`  | `usize`       | `value_usize`         |                                         |
+| `TYPE_DOUBLE` | `double`      | `value_double`        |                                         |
 
 ---
 
@@ -100,7 +100,7 @@ int main(int argc, char **argv)
 
     clp_init_option(&verbose, "verbose", "v", "enable verbose output",
                     TYPE_BOOL, false, false);
-    clp_init_opnd(&file, "file", "input file", TYPE_STR, true);
+    clp_init_operand(&file, "file", "input file", TYPE_STR, true);
 
     clp_add_command_option(root, &verbose);
     clp_add_command_operand(root, &file);
@@ -174,7 +174,7 @@ DStringView *val = d_unordered_map_get(&env.value.value_kv, &key);
 
 ```c
 Operand files;
-clp_init_opnd_list(&files, "files", "source files", false);
+clp_init_operand_list(&files, "files", "source files", false);
 clp_add_command_operand(&root, &files);
 /* prog a.c b.c c.c → files.value.value_list has 3 elements */
 ```
@@ -228,9 +228,9 @@ void clp_init_option_raw(Option  *opt, char *long_name, char *short_name,
                          OptAction action, Value value,
                          Type type, bool required, bool global);
 
-void clp_init_operand_raw  (Operand *op,  char *name, char *description,
+void clp_new_operand_raw  (Operand *op,  char *name, char *description,
                          bool has_default_value,
-                         OpndAction action, Value value,
+                         OperandAction action, Value value,
                          Type type, bool required);
 ```
 
@@ -261,22 +261,22 @@ clp_init_option_kv(opt, ln, sn, desc, required, glob)
 ### Operand convenience macros
 
 ```c
-/* OPND_ACT_SET — no default */
-clp_init_opnd(op, name, desc, type, required)
+/* OPERAND_ACT_SET — no default */
+clp_init_operand(op, name, desc, type, required)
 
-/* OPND_ACT_SET — with default */
-clp_init_opnd_default_bool  (op, name, desc, def, req)
-clp_init_opnd_default_char  (op, name, desc, def, req)
-clp_init_opnd_default_str   (op, name, desc, def, req)
-clp_init_opnd_default_long  (op, name, desc, def, req)
-clp_init_opnd_default_usize (op, name, desc, def, req)
-clp_init_opnd_default_double(op, name, desc, def, req)
+/* OPERAND_ACT_SET — with default */
+clp_init_operand_default_bool  (op, name, desc, def, req)
+clp_init_operand_default_char  (op, name, desc, def, req)
+clp_init_operand_default_str   (op, name, desc, def, req)
+clp_init_operand_default_long  (op, name, desc, def, req)
+clp_init_operand_default_usize (op, name, desc, def, req)
+clp_init_operand_default_double(op, name, desc, def, req)
 
-/* OPND_ACT_LIST */
-clp_init_opnd_list(op, name, desc, required)
+/* OPERAND_ACT_LIST */
+clp_init_operand_list(op, name, desc, required)
 
-/* OPND_ACT_KV */
-clp_init_opnd_kv(op, name, desc, required)
+/* OPERAND_ACT_KV */
+clp_init_operand_kv(op, name, desc, required)
 ```
 
 ---
@@ -285,19 +285,19 @@ clp_init_opnd_kv(op, name, desc, required)
 
 All error conditions print a message to **stderr** and call `exit(EXIT_FAILURE)`.
 
-| Condition | Error |
-|-----------|-------|
-| Long option name starts with `-` or `_`, or contains invalid chars | exits |
-| Short option name is not alphanumeric | exits |
-| Long option name is `"help"` (reserved) | exits |
-| `OPT_ACT_COUNT` paired with a type other than `TYPE_USIZE` | exits |
-| Duplicate long or short option name on the same command | exits |
-| Command has both operands and subcommands | exits |
-| Required operand registered after an optional one | exits |
-| Duplicate operand name on the same command | warning on stderr (no exit) |
-| Unknown option token at parse time | exits |
-| Option value fails type conversion | exits |
-| Too many positional arguments | exits |
-| Missing required option or operand | exits, prints usage + `--help` hint |
-| KV pair missing `=` | exits |
-| KV pair has empty key or empty value | exits |
+| Condition                                                          | Error                               |
+| ------------------------------------------------------------------ | ----------------------------------- |
+| Long option name starts with `-` or `_`, or contains invalid chars | exits                               |
+| Short option name is not alphanumeric                              | exits                               |
+| Long option name is `"help"` (reserved)                            | exits                               |
+| `OPT_ACT_COUNT` paired with a type other than `TYPE_USIZE`         | exits                               |
+| Duplicate long or short option name on the same command            | exits                               |
+| Command has both operands and subcommands                          | exits                               |
+| Required operand registered after an optional one                  | exits                               |
+| Duplicate operand name on the same command                         | warning on stderr (no exit)         |
+| Unknown option token at parse time                                 | exits                               |
+| Option value fails type conversion                                 | exits                               |
+| Too many positional arguments                                      | exits                               |
+| Missing required option or operand                                 | exits, prints usage + `--help` hint |
+| KV pair missing `=`                                                | exits                               |
+| KV pair has empty key or empty value                               | exits                               |

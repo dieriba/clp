@@ -31,9 +31,9 @@
  *
  * OPERAND ACTIONS
  * ---------------
- * OPND_ACT_SET  — stores a single typed value.
- * OPND_ACT_LIST — consumes all remaining positional arguments into a DDynArray.
- * OPND_ACT_KV   — parses a single key=value positional argument into a DUnorderedMap.
+ * OPERAND_ACT_SET  — stores a single typed value.
+ * OPERAND_ACT_LIST — consumes all remaining positional arguments into a DDynArray.
+ * OPERAND_ACT_KV   — parses a single key=value positional argument into a DUnorderedMap.
  *
  * VALUE TYPES
  * -----------
@@ -66,7 +66,7 @@
  *   Command *root    = clp_new_command(0, "prog", "my program");
  *   Option  *verbose = clp_new_option("verbose", "v", "enable verbose output", TYPE_BOOL, false, false);
  *   Operand  file;
- *   clp_init_opnd(&file, "file", "input file", TYPE_STR, true);
+ *   clp_init_operand(&file, "file", "input file", TYPE_STR, true);
  *   clp_add_command_option(root, verbose);
  *   clp_add_command_operand(root, &file);
  *   Command *cmd = NULL;
@@ -112,32 +112,24 @@
 
 #define clp_new_option_kv(ln, sn, desc, required, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob)
 
-#define clp_init_opnd(op, name, description, type, required) \
-    clp_init_operand_raw(op, name, description, false, OPND_ACT_SET, (Value){0}, type, required)
+#define clp_init_operand(op, name, description, type, required) clp_init_operand_raw(op, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required)
 
-#define clp_init_opnd_default_long(op, name, desc, def, req) \
-    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_long = (def)}, TYPE_LONG, req)
+#define clp_init_operand_default_long(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req)
 
-#define clp_init_opnd_default_bool(op, name, desc, def, req) \
-    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_bool = (def)}, TYPE_BOOL, req)
+#define clp_init_operand_default_bool(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req)
 
-#define clp_init_opnd_default_usize(op, name, desc, def, req) \
-    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_usize = (def)}, TYPE_USIZE, req)
+#define clp_init_operand_default_usize(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req)
 
-#define clp_init_opnd_default_str(op, name, desc, def, req) \
-    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
+#define clp_init_operand_default_str(op, name, desc, def, req)                                                                                                                                         \
+    clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
 
-#define clp_init_opnd_default_char(op, name, desc, def, req) \
-    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_char = (def)}, TYPE_CHAR, req)
+#define clp_init_operand_default_char(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req)
 
-#define clp_init_opnd_default_double(op, name, desc, def, req) \
-    clp_init_operand_raw(op, name, desc, true, OPND_ACT_SET, (Value){.value_double = (def)}, TYPE_DOUBLE, req)
+#define clp_init_operand_default_double(op, name, desc, def, req) clp_init_operand_raw(op, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req)
 
-#define clp_init_opnd_list(op, name, desc, required) \
-    clp_init_operand_raw(op, name, desc, false, OPND_ACT_LIST, (Value){0}, TYPE_STR, required)
+#define clp_init_operand_list(op, name, desc, required) clp_init_operand_raw(op, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required)
 
-#define clp_init_opnd_kv(op, name, desc, required) \
-    clp_init_operand_raw(op, name, desc, false, OPND_ACT_KV, (Value){0}, TYPE_STR, required)
+#define clp_init_operand_kv(op, name, desc, required) clp_init_operand_raw(op, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required)
 
 typedef enum Type
 {
@@ -157,12 +149,12 @@ typedef enum OptAction
     OPT_ACT_KV
 } OptAction;
 
-typedef enum OpndAction
+typedef enum OperandAction
 {
-    OPND_ACT_LIST,
-    OPND_ACT_SET,
-    OPND_ACT_KV
-} OpndAction;
+    OPERAND_ACT_LIST,
+    OPERAND_ACT_SET,
+    OPERAND_ACT_KV
+} OperandAction;
 
 typedef union Value
 {
@@ -178,14 +170,14 @@ typedef union Value
 
 typedef struct Operand
 {
-    Value       value;
-    DStringView name;
-    char       *description;
-    OpndAction  action;
-    Type        type;
-    bool        required;
-    bool        has_default_value;
-    bool        value_set;
+    Value         value;
+    DStringView   name;
+    char         *description;
+    OperandAction action;
+    Type          type;
+    bool          required;
+    bool          has_default_value;
+    bool          value_set;
 } Operand;
 
 typedef struct Option
@@ -301,7 +293,7 @@ Option *clp_new_option_raw(char *long_name, char *short_name, char *description,
  *
  * op and name must not be NULL. Exits on an empty or invalid name.
  */
-void clp_init_operand_raw(Operand *op, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required);
+void clp_init_operand_raw(Operand *op, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required);
 
 /* Parse argv against the command tree rooted at root.
  *
@@ -336,7 +328,7 @@ Option *clp_get_option_by_long(Command *command, DStringView lng);
 /* Return the operand registered on command with the given name, or NULL.
  * command must not be NULL.
  */
-Operand *clp_get_operand(Command *command, DStringView opnd_name);
+Operand *clp_get_operand(Command *command, DStringView operand_name);
 
 /* Recursively release all resources allocated inside the command tree.
  */

@@ -97,7 +97,7 @@ Option *clp_new_option_raw(char *long_name, char *short_name, char *description,
     return opt;
 }
 
-void clp_init_operand_raw(Operand *operand, char *name, char *description, bool has_default_value, OpndAction action, Value value, Type type, bool required)
+void clp_init_operand_raw(Operand *operand, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required)
 {
     assert(operand != NULL);
     assert(name != NULL);
@@ -105,12 +105,12 @@ void clp_init_operand_raw(Operand *operand, char *name, char *description, bool 
     operand->name = d_string_view_from_c_string(name);
     exit_if_not_valid_long_opt_name(operand->name);
 
-    if (has_default_value == false && action == OPND_ACT_LIST)
+    if (has_default_value == false && action == OPERAND_ACT_LIST)
     {
         if (d_dyn_array_init(&operand->value.value_list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
             clp_exit_out_of_memory();
     }
-    else if (has_default_value == false && action == OPND_ACT_KV)
+    else if (has_default_value == false && action == OPERAND_ACT_KV)
     {
         if (d_unordered_map_init_not_owned_d_string_view_key(&operand->value.value_kv, sizeof(DStringView), 1, NULL))
             clp_exit_out_of_memory();
@@ -149,7 +149,7 @@ static Option *get_option_by_predicate(Command *command, void *ctx, bool (*predi
     return NULL;
 }
 
-static Operand *get_command_opnd_by_name(Command *command, DStringView name)
+static Operand *get_command_operand_by_name(Command *command, DStringView name)
 {
     DDynArray *operands = &command->operands;
     usize      size     = d_dyn_array_get_size(operands);
@@ -175,7 +175,7 @@ Option *clp_get_option_by_long(Command *command, DStringView lng)
     return get_option_by_predicate(command, &lng, eq_long_opt);
 }
 
-Operand *clp_get_operand(Command *command, DStringView opnd_name)
+Operand *clp_get_operand(Command *command, DStringView operand_name)
 {
     assert(command != NULL);
     DDynArray *operands = &command->operands;
@@ -183,7 +183,7 @@ Operand *clp_get_operand(Command *command, DStringView opnd_name)
     for (usize i = 0; i < size; i++)
     {
         Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
-        if (d_string_view_compare(operand->name, opnd_name))
+        if (d_string_view_compare(operand->name, operand_name))
             return operand;
     }
     return NULL;
@@ -227,7 +227,7 @@ void clp_add_command_operand(Command *command, Operand *command_operand)
     usize      size         = d_dyn_array_get_size(ops);
     Operand   *last_operand = size == 0 ? NULL : d_dyn_array_get_elem_deref_addr_at_safe(ops, size - 1);
 
-    if (get_command_opnd_by_name(command, command_operand->name))
+    if (get_command_operand_by_name(command, command_operand->name))
         clp_eprint("warning: operand name '%s' already used, consider a more descriptive name\n", command_operand->name.data);
     else if (last_operand != NULL && (last_operand->required == false && command_operand->required == true))
         clp_eprint_exit("command %s: required operand '%s' cannot follow optional operand '%s'\n", command->name.data, command_operand->name.data, last_operand->name.data);

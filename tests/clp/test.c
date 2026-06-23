@@ -30,12 +30,12 @@ static Option *init_list_opt(char *lng, char *sht)
 
 static void init_str_operand(Operand *op, char *name, bool required)
 {
-    clp_init_opnd(op, name, NULL, TYPE_STR, required);
+    clp_init_operand(op, name, NULL, TYPE_STR, required);
 }
 
 static void init_list_operand(Operand *op, char *name, bool required)
 {
-    clp_init_opnd_list(op, name, NULL, required);
+    clp_init_operand_list(op, name, NULL, required);
 }
 
 static Option *init_kv_opt(char *lng, char *sht)
@@ -45,7 +45,7 @@ static Option *init_kv_opt(char *lng, char *sht)
 
 static void init_kv_operand(Operand *op, char *name, bool required)
 {
-    clp_init_opnd_kv(op, name, NULL, required);
+    clp_init_operand_kv(op, name, NULL, required);
 }
 
 /* ── fork/pipe helper (used by null-guard and error tests) ──────────────── */
@@ -155,7 +155,7 @@ static void test_get_option_by_long_returns_null_for_unknown(void)
     clp_cleanup(cmd);
 }
 
-static void test_get_opnd_finds_registered_operand(void)
+static void test_get_operand_finds_registered_operand(void)
 {
     Command *cmd;
     Operand  op;
@@ -166,7 +166,7 @@ static void test_get_opnd_finds_registered_operand(void)
     clp_cleanup(cmd);
 }
 
-static void test_get_opnd_returns_null_for_unknown(void)
+static void test_get_operand_returns_null_for_unknown(void)
 {
     Command *cmd;
     Operand  op;
@@ -490,7 +490,7 @@ static void test_list_option_comma_separated(void)
 
 /* ── operand parsing ────────────────────────────────────────────────────── */
 
-static void test_single_opnd_is_set(void)
+static void test_single_operand_is_set(void)
 {
     Command *root;
     Operand  file;
@@ -506,7 +506,7 @@ static void test_single_opnd_is_set(void)
     clp_cleanup(root);
 }
 
-static void test_options_and_opnd_together(void)
+static void test_options_and_operand_together(void)
 {
     Command *root;
     Option  *verbose;
@@ -608,7 +608,7 @@ static void test_double_hyphen_with_options_before(void)
 
 /* ── list operands ──────────────────────────────────────────────────────── */
 
-static void test_list_opnd_consumes_remaining_args(void)
+static void test_list_operand_consumes_remaining_args(void)
 {
     Command *root;
     Operand  files;
@@ -1033,7 +1033,7 @@ static void test_add_subcommand_when_operands_exist_exits(void)
 }
 
 /* adding an operand to a command that already has subcommands is rejected */
-static void _err_add_opnd_when_subcommands_exist(void)
+static void _err_add_operand_when_subcommands_exist(void)
 {
     Command *root, *push;
     Operand  file;
@@ -1043,9 +1043,9 @@ static void _err_add_opnd_when_subcommands_exist(void)
     clp_add_command_sub_command(root, push);
     clp_add_command_operand(root, &file);
 }
-static void test_add_opnd_when_subcommands_exist_exits(void)
+static void test_add_operand_when_subcommands_exist_exits(void)
 {
-    ChildResult r = run_child(_err_add_opnd_when_subcommands_exist);
+    ChildResult r = run_child(_err_add_operand_when_subcommands_exist);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "cannot have both operands and subcommands"));
     D_TEST_NOT_NULL(strstr(r.err, "prog"));
@@ -1802,13 +1802,13 @@ static void _err_missing_required_operand(void)
     Command *root;
     Operand  file;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&file, "file", NULL, TYPE_STR, true);
+    clp_init_operand(&file, "file", NULL, TYPE_STR, true);
     clp_add_command_operand(root, &file);
     char    *argv[] = {"prog", NULL};
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_missing_required_opnd_exits(void)
+static void test_missing_required_operand_exits(void)
 {
     ChildResult r = run_child(_err_missing_required_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
@@ -1822,7 +1822,7 @@ static void _err_too_many_operands(void)
     Command *root;
     Operand  file;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&file, "file", NULL, TYPE_STR, false);
+    clp_init_operand(&file, "file", NULL, TYPE_STR, false);
     clp_add_command_operand(root, &file);
     char    *argv[] = {"prog", "a.txt", "b.txt", NULL};
     Command *cmd    = NULL;
@@ -2021,12 +2021,12 @@ static void _err_required_after_optional_operand(void)
     Command *root;
     Operand  opt_op, req_op;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&opt_op, "optional", NULL, TYPE_STR, false);
-    clp_init_opnd(&req_op, "required", NULL, TYPE_STR, true);
+    clp_init_operand(&opt_op, "optional", NULL, TYPE_STR, false);
+    clp_init_operand(&req_op, "required", NULL, TYPE_STR, true);
     clp_add_command_operand(root, &opt_op);
     clp_add_command_operand(root, &req_op);
 }
-static void test_required_opnd_after_optional_exits(void)
+static void test_required_operand_after_optional_exits(void)
 {
     ChildResult r = run_child(_err_required_after_optional_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
@@ -2150,22 +2150,22 @@ static void test_missing_required_option_in_subcommand_exits(void)
 }
 
 /* missing required operand inside a subcommand */
-static void _err_missing_required_opnd_in_subcommand(void)
+static void _err_missing_required_operand_in_subcommand(void)
 {
     Command *root, *cp;
     Operand  dst;
     root = clp_new_command(0, "prog", NULL);
     cp   = clp_new_command(1, "cp", NULL);
-    clp_init_opnd(&dst, "dst", NULL, TYPE_STR, true);
+    clp_init_operand(&dst, "dst", NULL, TYPE_STR, true);
     clp_add_command_operand(cp, &dst);
     clp_add_command_sub_command(root, cp);
     char    *argv[] = {"prog", "cp", NULL};
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_missing_required_opnd_in_subcommand_exits(void)
+static void test_missing_required_operand_in_subcommand_exits(void)
 {
-    ChildResult r = run_child(_err_missing_required_opnd_in_subcommand);
+    ChildResult r = run_child(_err_missing_required_operand_in_subcommand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following operands were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "<dst>"));
@@ -2173,19 +2173,19 @@ static void test_missing_required_opnd_in_subcommand_exits(void)
 }
 
 /* duplicate operand name emits a warning but does NOT exit */
-static void _warn_duplicate_opnd_name(void)
+static void _warn_duplicate_operand_name(void)
 {
     Command *root;
     Operand  a, b;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&a, "file", NULL, TYPE_STR, false);
-    clp_init_opnd(&b, "file", NULL, TYPE_STR, false);
+    clp_init_operand(&a, "file", NULL, TYPE_STR, false);
+    clp_init_operand(&b, "file", NULL, TYPE_STR, false);
     clp_add_command_operand(root, &a);
     clp_add_command_operand(root, &b);
 }
-static void test_duplicate_opnd_name_warns_no_exit(void)
+static void test_duplicate_operand_name_warns_no_exit(void)
 {
-    ChildResult r = run_child(_warn_duplicate_opnd_name);
+    ChildResult r = run_child(_warn_duplicate_operand_name);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.err, "warning"));
     D_TEST_NOT_NULL(strstr(r.err, "already used"));
@@ -2272,13 +2272,13 @@ static void _err_invalid_usize_operand(void)
     Command *root;
     Operand  count;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&count, "count", NULL, TYPE_USIZE, false);
+    clp_init_operand(&count, "count", NULL, TYPE_USIZE, false);
     clp_add_command_operand(root, &count);
     char    *argv[] = {"prog", "notanumber", NULL};
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_invalid_usize_opnd_value_exits(void)
+static void test_invalid_usize_operand_value_exits(void)
 {
     ChildResult r = run_child(_err_invalid_usize_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
@@ -2293,13 +2293,13 @@ static void _err_invalid_long_operand(void)
     Command *root;
     Operand  offset;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&offset, "offset", NULL, TYPE_LONG, false);
+    clp_init_operand(&offset, "offset", NULL, TYPE_LONG, false);
     clp_add_command_operand(root, &offset);
     char    *argv[] = {"prog", "xyz", NULL};
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_invalid_long_opnd_value_exits(void)
+static void test_invalid_long_operand_value_exits(void)
 {
     ChildResult r = run_child(_err_invalid_long_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
@@ -2314,13 +2314,13 @@ static void _err_invalid_char_operand(void)
     Command *root;
     Operand  delim;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&delim, "delim", NULL, TYPE_CHAR, false);
+    clp_init_operand(&delim, "delim", NULL, TYPE_CHAR, false);
     clp_add_command_operand(root, &delim);
     char    *argv[] = {"prog", "ab", NULL};
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_invalid_char_opnd_value_exits(void)
+static void test_invalid_char_operand_value_exits(void)
 {
     ChildResult r = run_child(_err_invalid_char_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
@@ -2334,13 +2334,13 @@ static void _err_invalid_double_operand(void)
     Command *root;
     Operand  scale;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&scale, "scale", NULL, TYPE_DOUBLE, false);
+    clp_init_operand(&scale, "scale", NULL, TYPE_DOUBLE, false);
     clp_add_command_operand(root, &scale);
     char    *argv[] = {"prog", "notdouble", NULL};
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_invalid_double_opnd_value_exits(void)
+static void test_invalid_double_operand_value_exits(void)
 {
     ChildResult r = run_child(_err_invalid_double_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
@@ -2378,8 +2378,8 @@ static void _err_multiple_missing_required_operands(void)
     Command *root;
     Operand  src, dst;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&src, "src", NULL, TYPE_STR, true);
-    clp_init_opnd(&dst, "dst", NULL, TYPE_STR, true);
+    clp_init_operand(&src, "src", NULL, TYPE_STR, true);
+    clp_init_operand(&dst, "dst", NULL, TYPE_STR, true);
     clp_add_command_operand(root, &src);
     clp_add_command_operand(root, &dst);
     char    *argv[] = {"prog", NULL};
@@ -2451,7 +2451,7 @@ static void _usage_missing_required_operand(void)
     Command *root;
     Operand  file;
     root = clp_new_command(0, "prog", NULL);
-    clp_init_opnd(&file, "file", NULL, TYPE_STR, true);
+    clp_init_operand(&file, "file", NULL, TYPE_STR, true);
     clp_add_command_operand(root, &file);
     char    *argv[] = {"prog", NULL};
     Command *cmd    = NULL;
@@ -2515,7 +2515,7 @@ static void _usage_help_with_operand(void)
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_usage_line_shows_opnd_names(void)
+static void test_usage_line_shows_operand_names(void)
 {
     ChildResult r = run_child_stdout(_usage_help_with_operand);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
@@ -2834,7 +2834,7 @@ static void test_kv_opt_empty_value_exits(void)
     D_TEST_NOT_NULL(strstr(r.err, "--env"));
 }
 
-static void _err_kv_opnd_missing_eq(void)
+static void _err_kv_operand_missing_eq(void)
 {
     Command *root;
     Operand  binding;
@@ -2845,15 +2845,15 @@ static void _err_kv_opnd_missing_eq(void)
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_kv_opnd_missing_eq_exits(void)
+static void test_kv_operand_missing_eq_exits(void)
 {
-    ChildResult r = run_child(_err_kv_opnd_missing_eq);
+    ChildResult r = run_child(_err_kv_operand_missing_eq);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "missing '='"));
     D_TEST_NOT_NULL(strstr(r.err, "HOSTlocalhost"));
 }
 
-static void _err_kv_opnd_empty_key(void)
+static void _err_kv_operand_empty_key(void)
 {
     Command *root;
     Operand  binding;
@@ -2864,14 +2864,14 @@ static void _err_kv_opnd_empty_key(void)
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_kv_opnd_empty_key_exits(void)
+static void test_kv_operand_empty_key_exits(void)
 {
-    ChildResult r = run_child(_err_kv_opnd_empty_key);
+    ChildResult r = run_child(_err_kv_operand_empty_key);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "empty key"));
 }
 
-static void _err_kv_opnd_empty_value(void)
+static void _err_kv_operand_empty_value(void)
 {
     Command *root;
     Operand  binding;
@@ -2882,9 +2882,9 @@ static void _err_kv_opnd_empty_value(void)
     Command *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
-static void test_kv_opnd_empty_value_exits(void)
+static void test_kv_operand_empty_value_exits(void)
 {
-    ChildResult r = run_child(_err_kv_opnd_empty_value);
+    ChildResult r = run_child(_err_kv_operand_empty_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "empty value"));
     D_TEST_NOT_NULL(strstr(r.err, "HOST"));
@@ -2900,8 +2900,8 @@ int main(void)
         D_TEST_GENERATE_TEST(test_get_option_by_short_returns_null_for_unknown),
         D_TEST_GENERATE_TEST(test_get_option_by_long_finds_registered_option),
         D_TEST_GENERATE_TEST(test_get_option_by_long_returns_null_for_unknown),
-        D_TEST_GENERATE_TEST(test_get_opnd_finds_registered_operand),
-        D_TEST_GENERATE_TEST(test_get_opnd_returns_null_for_unknown),
+        D_TEST_GENERATE_TEST(test_get_operand_finds_registered_operand),
+        D_TEST_GENERATE_TEST(test_get_operand_returns_null_for_unknown),
         /* bool flags */
         D_TEST_GENERATE_TEST(test_long_bool_flag_sets_value),
         D_TEST_GENERATE_TEST(test_short_bool_flag_sets_value),
@@ -2924,13 +2924,13 @@ int main(void)
         D_TEST_GENERATE_TEST(test_list_option_single_entry),
         D_TEST_GENERATE_TEST(test_list_option_comma_separated),
         /* operands */
-        D_TEST_GENERATE_TEST(test_single_opnd_is_set),
-        D_TEST_GENERATE_TEST(test_options_and_opnd_together),
+        D_TEST_GENERATE_TEST(test_single_operand_is_set),
+        D_TEST_GENERATE_TEST(test_options_and_operand_together),
         D_TEST_GENERATE_TEST(test_option_after_operand),
         D_TEST_GENERATE_TEST(test_multiple_operands),
         D_TEST_GENERATE_TEST(test_double_hyphen_terminates_option_parsing),
         D_TEST_GENERATE_TEST(test_double_hyphen_with_options_before),
-        D_TEST_GENERATE_TEST(test_list_opnd_consumes_remaining_args),
+        D_TEST_GENERATE_TEST(test_list_operand_consumes_remaining_args),
         /* subcommands */
         D_TEST_GENERATE_TEST(test_subcommand_is_dispatched),
         D_TEST_GENERATE_TEST(test_subcommand_with_own_option),
@@ -2982,7 +2982,7 @@ int main(void)
         D_TEST_GENERATE_TEST(test_unknown_long_option_exits),
         D_TEST_GENERATE_TEST(test_unknown_short_option_exits),
         D_TEST_GENERATE_TEST(test_missing_required_option_exits),
-        D_TEST_GENERATE_TEST(test_missing_required_opnd_exits),
+        D_TEST_GENERATE_TEST(test_missing_required_operand_exits),
         D_TEST_GENERATE_TEST(test_too_many_operands_exits),
         D_TEST_GENERATE_TEST(test_invalid_usize_value_exits),
         D_TEST_GENERATE_TEST(test_invalid_long_value_exits),
@@ -2993,7 +2993,7 @@ int main(void)
         D_TEST_GENERATE_TEST(test_str_opt_missing_value_exits),
         D_TEST_GENERATE_TEST(test_duplicate_long_option_name_exits),
         D_TEST_GENERATE_TEST(test_duplicate_short_option_name_exits),
-        D_TEST_GENERATE_TEST(test_required_opnd_after_optional_exits),
+        D_TEST_GENERATE_TEST(test_required_operand_after_optional_exits),
         D_TEST_GENERATE_TEST(test_long_opt_name_starting_with_hyphen_exits),
         D_TEST_GENERATE_TEST(test_long_opt_name_starting_with_underscore_exits),
         D_TEST_GENERATE_TEST(test_short_opt_name_non_alnum_exits),
@@ -3001,19 +3001,19 @@ int main(void)
         D_TEST_GENERATE_TEST(test_count_action_short_only_with_non_usize_type_exits),
         D_TEST_GENERATE_TEST(test_parent_option_not_visible_in_subcommand_exits),
         D_TEST_GENERATE_TEST(test_missing_required_option_in_subcommand_exits),
-        D_TEST_GENERATE_TEST(test_missing_required_opnd_in_subcommand_exits),
+        D_TEST_GENERATE_TEST(test_missing_required_operand_in_subcommand_exits),
         D_TEST_GENERATE_TEST(test_unknown_short_in_combined_token_exits),
-        D_TEST_GENERATE_TEST(test_duplicate_opnd_name_warns_no_exit),
+        D_TEST_GENERATE_TEST(test_duplicate_operand_name_warns_no_exit),
         D_TEST_GENERATE_TEST(test_long_opt_name_with_invalid_chars_exits),
         D_TEST_GENERATE_TEST(test_add_subcommand_when_operands_exist_exits),
-        D_TEST_GENERATE_TEST(test_add_opnd_when_subcommands_exist_exits),
+        D_TEST_GENERATE_TEST(test_add_operand_when_subcommands_exist_exits),
         D_TEST_GENERATE_TEST(test_short_opt_missing_value_exits),
         D_TEST_GENERATE_TEST(test_invalid_value_via_short_opt_exits),
         D_TEST_GENERATE_TEST(test_invalid_double_option_value_exits),
-        D_TEST_GENERATE_TEST(test_invalid_usize_opnd_value_exits),
-        D_TEST_GENERATE_TEST(test_invalid_long_opnd_value_exits),
-        D_TEST_GENERATE_TEST(test_invalid_char_opnd_value_exits),
-        D_TEST_GENERATE_TEST(test_invalid_double_opnd_value_exits),
+        D_TEST_GENERATE_TEST(test_invalid_usize_operand_value_exits),
+        D_TEST_GENERATE_TEST(test_invalid_long_operand_value_exits),
+        D_TEST_GENERATE_TEST(test_invalid_char_operand_value_exits),
+        D_TEST_GENERATE_TEST(test_invalid_double_operand_value_exits),
         D_TEST_GENERATE_TEST(test_multiple_missing_required_options_exits),
         D_TEST_GENERATE_TEST(test_multiple_missing_required_operands_exits),
         /* key=value option and operand */
@@ -3023,16 +3023,16 @@ int main(void)
         D_TEST_GENERATE_TEST(test_kv_opt_missing_eq_exits),
         D_TEST_GENERATE_TEST(test_kv_opt_empty_key_exits),
         D_TEST_GENERATE_TEST(test_kv_opt_empty_value_exits),
-        D_TEST_GENERATE_TEST(test_kv_opnd_missing_eq_exits),
-        D_TEST_GENERATE_TEST(test_kv_opnd_empty_key_exits),
-        D_TEST_GENERATE_TEST(test_kv_opnd_empty_value_exits),
+        D_TEST_GENERATE_TEST(test_kv_operand_missing_eq_exits),
+        D_TEST_GENERATE_TEST(test_kv_operand_empty_key_exits),
+        D_TEST_GENERATE_TEST(test_kv_operand_empty_value_exits),
         /* print_usage */
         D_TEST_GENERATE_TEST(test_usage_line_in_stderr_on_missing_required_option),
         D_TEST_GENERATE_TEST(test_for_more_info_hint_on_missing_required_option),
         D_TEST_GENERATE_TEST(test_usage_line_in_stderr_on_missing_required_operand),
         D_TEST_GENERATE_TEST(test_usage_line_appears_in_help_stdout),
         D_TEST_GENERATE_TEST(test_usage_line_shows_command_placeholder),
-        D_TEST_GENERATE_TEST(test_usage_line_shows_opnd_names),
+        D_TEST_GENERATE_TEST(test_usage_line_shows_operand_names),
         D_TEST_GENERATE_TEST(test_usage_line_shows_ellipsis_for_list_operand),
         D_TEST_GENERATE_TEST(test_usage_line_includes_option_names),
         /* help / -h built-in */
