@@ -3,6 +3,6 @@
 
 #include "clp.h"
 
-void free_command(void *command);
+void free_command(Command *command);
 
 #endif

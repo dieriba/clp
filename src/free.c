@@ -49,16 +49,14 @@ static void free_sub_commands(Command *root)
     d_dyn_array_destroy(&root->sub_commands);
 }
 
-void free_command(void *command)
+void free_command(Command *command)
 {
     if (command == NULL)
         return;
 
-    Command *root = command;
-
-    free_sub_commands(root);
-    free_command_options(root);
-    free_command_operands(root);
-    d_dyn_array_destroy(&root->extra);
-    free(root);
+    free_sub_commands(command);
+    free_command_options(command);
+    free_command_operands(command);
+    d_dyn_array_destroy(&command->extra);
+    free(command);
 }
