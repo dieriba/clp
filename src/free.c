@@ -1,12 +1,12 @@
 #include "free.h"
 
-void free_command(void *command)
+#include "clp.h"
+#include "d_dyn_array.h"
+#include "d_types.h"
+
+static void free_command_options(Command *root)
 {
-    if (command == NULL)
-        return;
-    Command *cmd = command;
-    d_dyn_array_destroy(&cmd->sub_commands);
-    DDynArray *opts = &cmd->options;
+    DDynArray *opts = &root->options;
     for (usize i = 0; i < opts->array.size; i++)
     {
         Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
@@ -15,10 +15,12 @@ void free_command(void *command)
         else if (opt->action == OPT_ACT_LIST)
             d_dyn_array_destroy(&opt->value.value_list);
     }
+    d_dyn_array_destroy(&root->options);
+}
 
-    d_dyn_array_destroy(&cmd->options);
-
-    DDynArray *operands = &cmd->operands;
+static void free_command_operands(Command *root)
+{
+    DDynArray *operands = &root->operands;
     for (usize i = 0; i < operands->array.size; i++)
     {
         Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
@@ -28,6 +30,31 @@ void free_command(void *command)
             d_dyn_array_destroy(&operand->value.value_list);
     }
 
-    d_dyn_array_destroy(&cmd->operands);
-    d_dyn_array_destroy(&cmd->extra);
+    d_dyn_array_destroy(&root->operands);
+}
+
+static void free_sub_commands(Command *root)
+{
+    DDynArray *sub_commands = &root->sub_commands;
+    usize      size         = d_dyn_array_get_size(sub_commands);
+    for (usize i = 0; i < size; i++)
+    {
+        Command *sub_cmd = d_dyn_array_get_elem_deref_addr_at_safe(sub_commands, i);
+        free_command(sub_cmd);
+    }
+    d_dyn_array_destroy(&root->sub_commands);
+}
+
+void free_command(void *command)
+{
+    if (command == NULL)
+        return;
+
+    Command *root = command;
+
+    free_sub_commands(root);
+    free_command_options(root);
+    free_command_operands(root);
+    d_dyn_array_destroy(&root->extra);
+    free(root);
 }

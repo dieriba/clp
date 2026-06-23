@@ -15,10 +15,9 @@ See [BUILDING.md](BUILDING.md).
 A command owns a set of options and either operands **or** subcommands (never both). Every program has a root command; subcommands are nested below it.
 
 ```c
-Command root, push;
-clp_init_command(&root, 0, "git",  "the stupid content tracker");
-clp_init_command(&push, 1, "push", "update remote refs");
-clp_add_command_sub_command(&root, &push);
+Command *root = clp_new_command(0, "git",  "the stupid content tracker");
+Command *push = clp_new_command(1, "push", "update remote refs");
+clp_add_command_sub_command(root, push);
 ```
 
 After `clp_parse_args`, the `Command **command` out-parameter points to the deepest dispatched subcommand (or stays `NULL` if no subcommand token was found).
@@ -95,27 +94,25 @@ int main(int argc, char **argv)
 {
     (void)argc;
 
-    Command root;
-    Option  verbose;
-    Operand file;
-
-    clp_init_command(&root, 0, "prog", "my program");
+    Command *root = clp_new_command(0, "prog", "my program");
+    Option   verbose;
+    Operand  file;
 
     clp_init_option(&verbose, "verbose", "v", "enable verbose output",
                     TYPE_BOOL, false, false);
     clp_init_opnd(&file, "file", "input file", TYPE_STR, true);
 
-    clp_add_command_option(&root, &verbose);
-    clp_add_command_operand(&root, &file);
+    clp_add_command_option(root, &verbose);
+    clp_add_command_operand(root, &file);
 
     Command *cmd = NULL;
-    clp_parse_args(&root, argv, &cmd);
+    clp_parse_args(root, argv, &cmd);
 
     if (verbose.value_set)
         printf("verbose mode on\n");
     printf("file: %s\n", file.value.value_d_string_view.data);
 
-    clp_cleanup(&root);
+    clp_cleanup(root);
     return 0;
 }
 ```
@@ -127,21 +124,20 @@ int main(int argc, char **argv)
 ### Subcommands
 
 ```c
-Command root, add, rm;
-clp_init_command(&root, 0, "prog", "description");
-clp_init_command(&add,  1, "add",  "add a file");
-clp_init_command(&rm,   2, "rm",   "remove a file");
-clp_add_command_sub_command(&root, &add);
-clp_add_command_sub_command(&root, &rm);
+Command *root = clp_new_command(0, "prog", "description");
+Command *add  = clp_new_command(1, "add",  "add a file");
+Command *rm   = clp_new_command(2, "rm",   "remove a file");
+clp_add_command_sub_command(root, add);
+clp_add_command_sub_command(root, rm);
 
 Command *cmd = NULL;
-clp_parse_args(&root, argv, &cmd);
+clp_parse_args(root, argv, &cmd);
 
 switch (cmd ? cmd->code : -1) {
 case 1: /* add */ break;
 case 2: /* rm  */ break;
 }
-clp_cleanup(&root);
+clp_cleanup(root);
 ```
 
 ### Count option (`-v`, `-vvv`, `--verbose`)
@@ -208,7 +204,7 @@ clp_add_command_option(&root, &token);
 ### Lifecycle
 
 ```c
-void clp_init_command(Command *command, int code, char *name, char *description);
+Command *clp_new_command(int code, char *name, char *description);
 void clp_add_command_option(Command *command, Option *option);
 void clp_add_command_operand(Command *command, Operand *operand);
 void clp_add_command_sub_command(Command *command, Command *sub_command);

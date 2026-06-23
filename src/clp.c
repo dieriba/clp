@@ -9,21 +9,24 @@
 
 #include <assert.h>
 #include <ctype.h>
-#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #define NO_DESC "no associated description"
 #define START_OPT_CHAR '-'
-
-static void _free_command(void **command);
 
 static bool is_valid_short(char shrt)
 {
     return isalnum(shrt);
 }
 
-void clp_init_command(Command *command, int code, char *name, char *description)
+Command *clp_new_command(int code, char *name, char *description)
 {
-    assert(command != NULL);
+    Command *command = malloc(sizeof(Command));
+
+    if (command == NULL)
+        clp_eprint_exit("out of memory\n");
+
     assert(name != NULL);
 
     command->name           = d_string_view_from_c_string(name);
@@ -31,10 +34,10 @@ void clp_init_command(Command *command, int code, char *name, char *description)
     command->code           = code;
     command->parent_command = NULL;
 
-    if (d_dyn_array_default_ptr_arr_init(&command->sub_commands, (DestroyElemFn) _free_command, NULL, RAW_BUF_OPT_NONE) != D_OK ||
-        d_dyn_array_default_ptr_arr_init(&command->options, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->extra, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK ||
-        d_dyn_array_default_ptr_arr_init(&command->operands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
+    if (d_dyn_array_default_ptr_arr_init(&command->sub_commands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->options, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK ||
+        d_dyn_array_default_ptr_arr_init(&command->extra, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->operands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
         clp_eprint_exit("out of memory\n");
+    return command;
 }
 
 void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global)
@@ -46,8 +49,8 @@ void clp_init_option_raw(Option *opt, char *long_name, char *short_name, char *d
     opt->long_name = d_string_view_from_c_string(long_name);
 
     if (short_name && is_valid_short(*short_name) == false)
-        clp_invalid_arg_exit("'-%c' is not a valid option name\na short option must be a single alphanumeric character [a-z A-Z 0-9]\n", *short_name);
-    if (long_name)
+            clp_invalid_arg_exit("'-%c' is not a valid option name\na short option must be a single alphanumeric character [a-z A-Z 0-9]\n", *short_name);
+            if (long_name)
     {
         if (PSEUDO_FAST_STRCMP(long_name, HELP_OPT))
             clp_invalid_arg_exit("%s is a reserved option\n", long_name);
@@ -233,17 +236,8 @@ void clp_parse_args(Command *root, char **argv, Command **command)
     parse(root, argv, command);
 }
 
-static void _free_command(void **command)
-{
-    free_command(*command);
-}
-
 void clp_cleanup(Command *root)
 {
     assert(root != NULL);
-    DDynArray *sub_commands = &root->sub_commands;
-    usize      size         = d_dyn_array_get_size(sub_commands);
-    for (usize i = 0; i < size; i++)
-        clp_cleanup(d_dyn_array_get_elem_deref_addr_at_safe(sub_commands, i));
     free_command(root);
 }

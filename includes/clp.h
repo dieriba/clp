@@ -63,19 +63,18 @@
  *
  * QUICK START
  * -----------
- *   Command root;
+ *   Command *root = clp_new_command(0, "prog", "my program");
  *   Option verbose;
  *   Operand file;
- *   clp_init_command(&root, 0, "prog", "my program");
  *   clp_init_option(&verbose, "verbose", "v", "enable verbose output", TYPE_BOOL, false, false);
  *   clp_init_opnd(&file, "file", "input file", TYPE_STR, true);
- *   clp_add_command_option(&root, &verbose);
- *   clp_add_command_operand(&root, &file);
+ *   clp_add_command_option(root, &verbose);
+ *   clp_add_command_operand(root, &file);
  *   Command *cmd = NULL;
- *   clp_parse_args(&root, argv, &cmd);
+ *   clp_parse_args(root, argv, &cmd);
  *   if (verbose.value_set) { ... }
  *   printf("%s\n", file.value.value_d_string_view.data);
- *   clp_cleanup(&root);
+ *   clp_cleanup(root);
  *
  * ERROR HANDLING
  * --------------
@@ -229,19 +228,19 @@ struct Command
     int code;
 };
 
-/* Initialize a command.
+/* Allocate and initialise a new Command on the heap; returns the pointer.
  *
- *   command     — caller-owned storage for the Command (not heap-allocated).
  *   code        — user-defined integer identifier; useful for switch dispatch
  *                 after clp_parse_args returns the matched subcommand.
  *   name        — command name as it appears in argv (e.g. "push").
- *                 Must not be NULL or empty.
+ *                 Must not be NULL.
  *   description — shown in --help output; NULL is accepted (shown as
  *                 "no associated description").
  *
- * command and name must not be NULL.
+ * The returned pointer is owned by the caller.  Pass it to clp_cleanup to
+ * release the command and all its descendant resources.  name must not be NULL.
  */
-void clp_init_command(Command *command, int code, char *name, char *description);
+Command *clp_new_command(int code, char *name, char *description);
 
 /* Attach sub_command as a child of command.
  *
@@ -349,10 +348,6 @@ Option *clp_get_option_by_long(Command *command, DStringView lng);
 Operand *clp_get_operand(Command *command, DStringView opnd_name);
 
 /* Recursively release all resources allocated inside the command tree.
- *
- * Destroys the internal DDynArray and DUnorderedMap storage for every option
- * and operand at every level.  The Command, Option, and Operand structs are
- * caller-owned and are not freed.  root must not be NULL.
  */
 void clp_cleanup(Command *root);
 #endif
