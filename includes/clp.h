@@ -90,7 +90,6 @@
 #include "d_types.h"
 #include "d_dyn_array.h"
 #include "d_string_view.h"
-#include "d_error.h"
 #include "d_unordered_map.h"
 
 #define clp_init_option(opt, long_name, short_name, description, type, required, global) \
