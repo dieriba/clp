@@ -26,7 +26,7 @@ INC_DIRS += $(shell find $(C_LIB_DIR)/src -type d)
 
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
-CPPFLAGS := $(INC_FLAGS) -fPIC -MMD -MP -Wall -Werror -Wextra
+CFLAGS := $(INC_FLAGS) -fPIC -MMD -MP -Wall -Werror -Wextra
 
 
 $(BUILD_LIB): $(OBJS)
@@ -35,7 +35,7 @@ $(BUILD_LIB): $(OBJS)
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(CFLAGS) -c $< -o $@
 
 $(C_LIB):
 	$(MAKE) -C $(C_LIB_DIR) PIC=1
