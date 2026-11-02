@@ -27,11 +27,11 @@ INC_DIRS += $(shell find $(C_LIB_DIR)/src -type d)
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
 CFLAGS := $(INC_FLAGS) -fPIC -MMD -MP -Wall -Werror -Wextra
-
+VERSION_SCRIPT := libclp.map
 
 $(BUILD_LIB): $(OBJS) $(C_LIB)
 	mkdir -p $(dir $@)
-	$(CC) -shared -o $(BUILD_LIB) -Wl,--whole-archive $(C_LIB) -Wl,--no-whole-archive $^
+	$(CC) -shared -o $(BUILD_LIB) -Wl,--version-script=$(VERSION_SCRIPT) -Wl,--whole-archive $(C_LIB) -Wl,--no-whole-archive $^
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
@@ -54,5 +54,6 @@ $(TARGET_DIR)/%.o: %.c
 .PHONY: clean
 clean:
 	rm -rf $(TARGET_DIR)
+	$(MAKE) -C $(C_LIB_DIR) clean
 
 -include $(DEPS)

@@ -1,0 +1,6 @@
+CLP_1.0 {
+    global:
+        clp_*;
+    local:
+        *;
+};
