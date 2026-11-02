@@ -38,7 +38,7 @@ $(BUILD_DIR)/%.o: %.c
 	$(CC) $(CPPFLAGS) -DNDEBUG=1 $(CFLAGS) -c $< -o $@
 
 $(C_LIB):
-	$(MAKE) -C $(C_LIB_DIR)
+	$(MAKE) -C $(C_LIB_DIR) PIC=1
 
 tests: $(C_LIB) $(BIN_TESTS)
 .PHONY: tests
