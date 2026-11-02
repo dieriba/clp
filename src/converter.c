@@ -22,7 +22,7 @@ char *s_to_long(const char *s, Value *value)
 {
     char *endptr;
     errno              = 0;
-    value->value_usize = strtoll(s, &endptr, 10);
+    value->value_long = strtol(s, &endptr, 10);
 
     if (errno == ERANGE)
         return "value too high/low ";
