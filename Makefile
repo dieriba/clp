@@ -1,7 +1,7 @@
 TARGET_DIR := target
 
 BUILD_DIR := $(TARGET_DIR)/build
-LIB_NAME := libclp.a
+LIB_NAME := libclp.so
 BUILD_LIB := $(BUILD_DIR)/lib/$(LIB_NAME)
 
 C_LIB_DIR  := libs/c_lib
@@ -31,7 +31,7 @@ CFLAGS := $(INC_FLAGS) -fPIC -MMD -MP -Wall -Werror -Wextra
 
 $(BUILD_LIB): $(OBJS)
 	mkdir -p $(dir $@)
-	ar rcs $@ $^
+	$(CC) -shared $^ -o $(BUILD_LIB)
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
