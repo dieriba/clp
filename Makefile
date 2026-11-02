@@ -29,9 +29,9 @@ INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 CFLAGS := $(INC_FLAGS) -fPIC -MMD -MP -Wall -Werror -Wextra
 
 
-$(BUILD_LIB): $(OBJS)
+$(BUILD_LIB): $(OBJS) $(C_LIB)
 	mkdir -p $(dir $@)
-	$(CC) -shared $^ -o $(BUILD_LIB)
+	$(CC) -shared -o $(BUILD_LIB) -Wl,--whole-archive $(C_LIB) -Wl,--no-whole-archive $^
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
