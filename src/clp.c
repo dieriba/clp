@@ -176,7 +176,6 @@ Option *clp_get_option_by_short(Command *command, char shrt)
 Option *clp_get_option_by_long(Command *command, DStringView lng)
 {
     assert(command != NULL);
-    assert(lng.size > 0);
     return get_option_by_predicate(command, &lng, eq_long_opt);
 }
 
