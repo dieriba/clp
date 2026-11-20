@@ -31,7 +31,7 @@ VERSION_SCRIPT := libclp.map
 
 $(BUILD_LIB): $(OBJS) $(C_LIB)
 	mkdir -p $(dir $@)
-	$(CC) -shared -o $(BUILD_LIB) -Wl,--version-script=$(VERSION_SCRIPT) -Wl,--whole-archive $(C_LIB) -Wl,--no-whole-archive $^
+	$(CC) -shared -o $@ -Wl,-soname,$(LIB_NAME) -Wl,--version-script=$(VERSION_SCRIPT) -Wl,--whole-archive $(C_LIB) -Wl,--no-whole-archive $(OBJS)
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
@@ -45,7 +45,7 @@ tests: $(C_LIB) $(BIN_TESTS)
 
 $(BIN_TESTS): %: %.o $(BUILD_LIB) $(C_LIB)
 	mkdir -p $(dir $@)
-	$(CC) $< $(BUILD_LIB) $(C_LIB) -o $@
+	$(CC) $< -L$(dir $(BUILD_LIB)) -lclp -Wl,-rpath,$(abspath $(dir $(BUILD_LIB))) $(C_LIB) -o $@
 
 $(TARGET_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
