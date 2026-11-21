@@ -20,7 +20,7 @@ Command *push = clp_new_command(1, "push", "update remote refs");
 clp_add_command_sub_command(root, push);
 ```
 
-After `clp_parse_args`, the `Command **command` out-parameter points to the deepest dispatched subcommand (or stays `NULL` if no subcommand token was found).
+After `clp_parse_args`, the `Command **command` out-parameter points to the deepest dispatched subcommand (or to to `NULL` if no command token was found).
 
 ### Options
 
@@ -133,9 +133,12 @@ clp_add_command_sub_command(root, rm);
 Command *cmd = NULL;
 clp_parse_args(root, argv, &cmd);
 
-switch (cmd ? cmd->code : -1) {
-case 1: /* add */ break;
-case 2: /* rm  */ break;
+if (cmd)
+{
+    switch (cmd ? cmd->code : -1) {
+    case 1: /* add */ break;
+    case 2: /* rm  */ break;
+    }
 }
 clp_cleanup(root);
 ```

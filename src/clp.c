@@ -246,6 +246,7 @@ ClpStatus clp_try_parse_args(Command *root, char **argv, Command **command, ClpE
     assert(argv != NULL && *argv != NULL);
     if (err)
         *err = (ClpError) {0};
+    *command = NULL;
     return parse(root, argv, command, err);
 }
 
