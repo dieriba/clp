@@ -1,6 +1,7 @@
 #include "print.h"
 
 #include "converter.h"
+#include "error.h"
 #include "shared.h"
 
 #include <stdio.h>
@@ -183,51 +184,6 @@ void print_usage_line(FILE *stream, Command *command)
     fprintf(stream, "\n\n");
 }
 
-static bool print_command_required_opts_if_missing(Command *root)
-{
-    DDynArray *opts                  = &root->options;
-    usize      size                  = d_dyn_array_get_size(opts);
-    bool       required_opts_not_set = false;
-    for (size_t i = 0; i < size; i++)
-    {
-        Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
-        if (opt->required == true && opt->value_set == false)
-        {
-            if (required_opts_not_set == false)
-            {
-                clp_eprint("command %s: the following options were not provided:\n", root->name.data);
-                required_opts_not_set = true;
-            }
-            if (opt->long_name.size != 0)
-                clp_eprint("--%s\n", opt->long_name.data);
-            else
-                clp_eprint("-%c\n", opt->short_name);
-        }
-    }
-    return required_opts_not_set;
-}
-
-static bool print_command_required_operands_if_missing(Command *root)
-{
-    DDynArray *operands                  = &root->operands;
-    usize      size                      = d_dyn_array_get_size(operands);
-    bool       required_operands_not_set = false;
-    for (size_t i = 0; i < size; i++)
-    {
-        Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
-        if (operand->required == true && operand->value_set == false)
-        {
-            if (required_operands_not_set == false)
-            {
-                clp_eprint("command %s: the following operands were not provided:\n", root->name.data);
-                required_operands_not_set = true;
-            }
-            clp_eprint("<%s>\n", operand->name.data);
-        }
-    }
-    return required_operands_not_set;
-}
-
 static void print_command_help(Command *root)
 {
     usize col = max_col_width(root);
@@ -258,40 +214,89 @@ static void print_command_help(Command *root)
     }
 }
 
-static void exit_print_help(Command *root)
+static void print_help(Command *root)
 {
     print_usage_line(stdout, root);
     print_command_help(root);
-    exit(EXIT_SUCCESS);
 }
 
-void exit_help_or_if_invalid_opt(Command *root, Option *opt, char *prefix, const char *name, usize len)
+ClpStatus check_help_or_invalid_opt(Command *root, Option *opt, char *prefix, const char *name, usize len, ClpError *err)
 {
-    if (len == sizeof(HELP_OPT) - 1 && PSEUDO_FAST_STRCMP(name, HELP_OPT))
-        exit_print_help(root);
-
+    bool is_long_help  = len == sizeof(HELP_OPT) - 1 && PSEUDO_FAST_STRCMP(name, HELP_OPT);
+    bool is_short_help = opt == NULL && prefix[1] == 0 && name[0] == HELP_OPT[0]; // prefix[1] == 0 means short option; only when user has not defined their own -h
+    if (is_long_help || is_short_help)
+    {
+        print_help(root);
+        return error_fail(err, CLP_HELP_SHOWN, root, "%s", "");
+    }
     if (opt == NULL)
-    {
-        if (prefix[1] == 0 && name[0] == HELP_OPT[0]) // if prefix[1] == 0 then we know it is a short option
-            exit_print_help(root);                    // printing command help only if user has not define a short option with 'h'
-        clp_eprint_exit("command %s: unknown option '%s%.*s'\n", root->name.data, prefix, (int) len, name);
-    }
+        return error_fail(err, CLP_ERR_UNKNOWN_OPTION, root, "command %s: unknown option '%s%.*s'\n", root->name.data, prefix, (int) len, name);
+    return CLP_OK;
 }
 
-bool print_command_required_args_if_miss_required_args(Command *root)
+static bool has_missing_option(Command *root)
 {
-    bool miss = false;
-    if (print_command_required_opts_if_missing(root) == true)
+    DDynArray *opts = &root->options;
+    for (usize i = 0; i < d_dyn_array_get_size(opts); i++)
     {
-        miss = true;
-        fprintf(stderr, "\n");
+        Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
+        if (opt->required == true && opt->value_set == false)
+            return true;
+    }
+    return false;
+}
+
+static bool has_missing_operand(Command *root)
+{
+    DDynArray *ops = &root->operands;
+    for (usize i = 0; i < d_dyn_array_get_size(ops); i++)
+    {
+        Operand *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
+        if (op->required == true && op->value_set == false)
+            return true;
+    }
+    return false;
+}
+
+ClpStatus check_required_args(Command *root, ClpError *err)
+{
+    bool missing_opt     = has_missing_option(root);
+    bool missing_operand = has_missing_operand(root);
+
+    if (missing_opt == false && missing_operand == false)
+        return CLP_OK;
+
+    error_fail(err, CLP_ERR_MISSING_REQUIRED, root, "%s", "");
+
+    if (missing_opt)
+    {
+        error_append(err, "command %s: the following options were not provided:\n", root->name.data);
+        DDynArray *opts = &root->options;
+        for (usize i = 0; i < d_dyn_array_get_size(opts); i++)
+        {
+            Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
+            if (opt->required == false || opt->value_set == true)
+                continue;
+            if (opt->long_name.size != 0)
+                error_append(err, "  --%s\n", opt->long_name.data);
+            else
+                error_append(err, "  -%c\n", opt->short_name);
+        }
+        error_append(err, "\n");
     }
 
-    if (print_command_required_operands_if_missing(root) == true)
+    if (missing_operand)
     {
-        miss = true;
-        fprintf(stderr, "\n");
+        error_append(err, "command %s: the following operands were not provided:\n", root->name.data);
+        DDynArray *ops = &root->operands;
+        for (usize i = 0; i < d_dyn_array_get_size(ops); i++)
+        {
+            Operand *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
+            if (op->required == true && op->value_set == false)
+                error_append(err, "  <%s>\n", op->name.data);
+        }
+        error_append(err, "\n");
     }
 
-    return miss;
+    return CLP_ERR_MISSING_REQUIRED;
 }

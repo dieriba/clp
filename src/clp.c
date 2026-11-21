@@ -239,12 +239,27 @@ void clp_add_command_operand(Command *command, Operand *command_operand)
         clp_exit_out_of_memory();
 }
 
-void clp_parse_args(Command *root, char **argv, Command **command)
+ClpStatus clp_try_parse_args(Command *root, char **argv, Command **command, ClpError *err)
 {
     assert(root != NULL);
     assert(command != NULL);
     assert(argv != NULL && *argv != NULL);
-    parse(root, argv, command);
+    if (err)
+        *err = (ClpError) {0};
+    return parse(root, argv, command, err);
+}
+
+void clp_parse_args(Command *root, char **argv, Command **command)
+{
+    ClpError  err;
+    ClpStatus status = clp_try_parse_args(root, argv, command, &err);
+
+    if (status == CLP_OK)
+        return;
+    if (status == CLP_HELP_SHOWN)
+        exit(EXIT_SUCCESS);
+    clp_print_error(stderr, &err);
+    exit(EXIT_FAILURE);
 }
 
 void clp_cleanup(Command *root)

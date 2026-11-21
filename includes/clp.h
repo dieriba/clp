@@ -76,8 +76,13 @@
  *
  * ERROR HANDLING
  * --------------
- * Runtime errors (bad option names, duplicates, OOM, parse failures) print a
- * message to stderr and call exit(EXIT_FAILURE).  There is no return-code error path.
+ * Parsing comes in two flavours:
+ *   clp_parse_args      — on error prints a message to stderr and calls
+ *                         exit(EXIT_FAILURE); "--help" exits with EXIT_SUCCESS.
+ *   clp_try_parse_args  — never exits; returns a ClpStatus and fills a ClpError
+ *                         so the caller decides what to do.
+ * Builder errors (bad option names, duplicates, OOM while building the command
+ * tree) still print a message to stderr and call exit(EXIT_FAILURE).
  * Programming errors (NULL passed to a parameter documented as must not be NULL)
  * are caught by assert and call abort() in debug builds.
  */
@@ -89,6 +94,8 @@
 #include "d_string_view.h"
 #include "d_types.h"
 #include "d_unordered_map.h"
+
+#include <stdio.h>
 
 #define clp_new_option(long_name, short_name, description, type, required, global) clp_new_option_raw(long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global)
 
@@ -119,8 +126,7 @@
 
 #define clp_new_operand_default_usize(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req)
 
-#define clp_new_operand_default_str(name, desc, def, req)                                                                                                                                              \
-    clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
+#define clp_new_operand_default_str(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
 
 #define clp_new_operand_default_char(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req)
 
@@ -194,6 +200,21 @@ typedef struct Option
     bool        has_args;
 } Option;
 
+typedef enum ClpStatus
+{
+    CLP_OK = 0,
+    CLP_HELP_SHOWN,            /* help was printed to stdout; not an error, but parsing stopped */
+    CLP_ERR_ALLOC,             /* allocation / container failure */
+    CLP_ERR_INVALID_NAME,      /* malformed option name on the command line (e.g. "--_x") */
+    CLP_ERR_UNKNOWN_OPTION,    /* option not registered on the command */
+    CLP_ERR_MISSING_ARG,       /* option requires an argument and none was given */
+    CLP_ERR_UNEXPECTED_ARG,    /* "--flag=value" on an option that takes no argument */
+    CLP_ERR_BAD_VALUE,         /* value could not be converted to the option/operand type */
+    CLP_ERR_BAD_KV,            /* malformed key=value pair */
+    CLP_ERR_TOO_MANY_OPERANDS, /* more positional arguments than registered operands */
+    CLP_ERR_MISSING_REQUIRED,  /* one or more required options/operands were not provided */
+} ClpStatus;
+
 typedef struct Command Command;
 
 struct Command
@@ -207,6 +228,18 @@ struct Command
     char       *description;
     int         code;
 };
+
+#define CLP_ERR_MSG_SIZE 1024
+
+typedef struct ClpError
+{
+    Command  *command;                   /* command being parsed when the error occurred */
+    ClpStatus code;                      /* CLP_OK, CLP_HELP_SHOWN or a CLP_ERR_* code */
+    char      message[CLP_ERR_MSG_SIZE]; /* human-readable, may span several lines; truncated if too long */
+} ClpError;
+
+/* Return a short static string naming code (e.g. "unknown option"). */
+const char *clp_status_to_str(ClpStatus code);
 
 /* Allocate and initialise a new Command on the heap; returns the pointer.
  *
@@ -315,6 +348,27 @@ Operand *clp_new_operand_raw(char *name, char *description, bool has_default_val
  * missing required option/operand; prints usage and a "--help" hint before exiting.
  */
 void clp_parse_args(Command *root, char **argv, Command **command);
+
+/* Same as clp_parse_args, but never exits.
+ *
+ * Returns CLP_OK on success.  On "--help" (or "-h", see clp_parse_args) the
+ * help text is printed to stdout and CLP_HELP_SHOWN is returned.  On any other
+ * failure the matching CLP_ERR_* code is returned and, when err is not NULL,
+ * *err is filled with the code, command and a formatted message (print it with
+ * clp_print_error).  err may be NULL if the caller only needs the status.
+ *
+ * On failure, options/operands parsed before the error keep the values they
+ * received; *command may already point to a dispatched subcommand.
+ *
+ * root, argv, *argv, and command must not be NULL.
+ */
+ClpStatus clp_try_parse_args(Command *root, char **argv, Command **command, ClpError *err);
+
+/* Print err in the same format clp_parse_args uses before exiting
+ * ("clp: <message>", plus the usage line for CLP_ERR_MISSING_REQUIRED).
+ * Prints nothing for CLP_OK and CLP_HELP_SHOWN.  stream and err must not be NULL.
+ */
+void clp_print_error(FILE *stream, const ClpError *err);
 
 /* Return the option registered on command with the given short name, or NULL.
  * command must not be NULL.
