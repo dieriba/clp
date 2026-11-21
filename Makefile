@@ -1,10 +1,10 @@
 TARGET_DIR := target
 
 BUILD_DIR := $(TARGET_DIR)/build
-LIB_NAME := libclp.so
+LIB_NAME := libclp.a
 BUILD_LIB := $(BUILD_DIR)/lib/$(LIB_NAME)
 
-C_LIB_DIR  := libs/c_lib
+C_LIB_DIR  ?= libs/c_lib
 C_LIB      := $(C_LIB_DIR)/target/build/lib/libd_lib.a
 
 SRC_DIRS := src
@@ -26,26 +26,28 @@ INC_DIRS += $(shell find $(C_LIB_DIR)/src -type d)
 
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
-CFLAGS := $(INC_FLAGS) -fPIC -MMD -MP -Wall -Werror -Wextra
-VERSION_SCRIPT := libclp.map
+CFLAGS := $(INC_FLAGS) -MMD -MP -Wall -Werror -Wextra
 
-$(BUILD_LIB): $(OBJS) $(C_LIB)
+all: $(BUILD_LIB) $(C_LIB)
+.PHONY: all
+
+$(BUILD_LIB): $(OBJS)
 	mkdir -p $(dir $@)
-	$(CC) -shared -o $@ -Wl,-soname,$(LIB_NAME) -Wl,--version-script=$(VERSION_SCRIPT) -Wl,--whole-archive $(C_LIB) -Wl,--no-whole-archive $(OBJS)
+	ar rcs $@ $^
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(C_LIB):
-	$(MAKE) -C $(C_LIB_DIR) PIC=1
+	$(MAKE) -C $(C_LIB_DIR)
 
-tests: $(C_LIB) $(BIN_TESTS)
+tests: $(BIN_TESTS)
 .PHONY: tests
 
 $(BIN_TESTS): %: %.o $(BUILD_LIB) $(C_LIB)
 	mkdir -p $(dir $@)
-	$(CC) $< -L$(dir $(BUILD_LIB)) -lclp -Wl,-rpath,$(abspath $(dir $(BUILD_LIB))) $(C_LIB) -o $@
+	$(CC) $< $(BUILD_LIB) $(C_LIB) -o $@
 
 $(TARGET_DIR)/%.o: %.c
 	mkdir -p $(dir $@)

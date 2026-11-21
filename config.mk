@@ -1,12 +1,10 @@
 CLP_DIR     := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 
 CLP_INC_DIR := $(CLP_DIR)/includes
-CLP_LIB_DIR := $(CLP_DIR)/target/build/lib
-CLP_LIB     := $(CLP_LIB_DIR)/libclp.so
+CLP_LIB     := $(CLP_DIR)/target/build/lib/libclp.a
 
-CLP_CFLAGS  := -I$(CLP_INC_DIR)
-CLP_LDFLAGS := -L$(CLP_LIB_DIR) -Wl,-rpath,$(abspath $(CLP_LIB_DIR))
-CLP_LDLIBS  := -lclp
+CLP_D_LIB_DIR ?= $(CLP_DIR)/libs/c_lib
+CLP_D_LIB     := $(CLP_D_LIB_DIR)/target/build/lib/libd_lib.a
 
-$(CLP_LIB):
-	$(MAKE) -C $(CLP_DIR)
+CLP_CFLAGS  := -I$(CLP_INC_DIR) -I$(CLP_D_LIB_DIR)/includes
+CLP_LDLIBS  := $(CLP_LIB) $(CLP_D_LIB)
