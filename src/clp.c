@@ -133,12 +133,13 @@ Operand *clp_new_operand_raw(char *name, char *description, bool has_default_val
 
 static inline bool eq_short_opt(Option *opt, void *ctx)
 {
-    return opt->short_name == *(char *) ctx;
+    char c = *(char *) ctx;
+    return c != (char) FLAG_SHORT_OPT_NOT_SET && opt->short_name == c;
 }
 
 static inline bool eq_long_opt(Option *opt, void *ctx)
 {
-    return d_string_view_compare(opt->long_name, *((DStringView *) ctx));
+    return opt->long_name.size > 0 && d_string_view_compare(opt->long_name, *((DStringView *) ctx));
 }
 
 static Option *get_option_by_predicate(Command *command, void *ctx, bool (*predicate)(Option *, void *))
