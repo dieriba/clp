@@ -58,7 +58,7 @@
  * OPTION NAME RULES
  * -----------------
  * - Long names must start with a letter and contain only [a-z A-Z 0-9 -].
- * - Short names must be a single alphanumeric character [a-z A-Z 0-9].
+ * - Short names must be a single alphanumeric character [a-z A-Z 0-9] or '?'.
  * - An option may have only a short name, only a long name, or both.
  *
  * QUICK START
@@ -291,7 +291,7 @@ void clp_add_command_operand(Command *command, Operand *command_operand);
  *                       a short-only option.  Must start with a letter and
  *                       contain only [a-z A-Z 0-9 -].  "help" is reserved.
  *   short_name        — single-character string (e.g. "v"), or NULL for a
- *                       long-only option.  Must be alphanumeric [a-z A-Z 0-9].
+ *                       long-only option.  Must be alphanumeric [a-z A-Z 0-9] or '?'.
  *   description       — help text; NULL is accepted.
  *   has_default_value — pass true when value carries a pre-filled default.
  *                       Pass false for LIST/KV so the library allocates the

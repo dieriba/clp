@@ -291,7 +291,7 @@ All error conditions print a message to **stderr** and call `exit(EXIT_FAILURE)`
 | Condition                                                          | Error                               |
 | ------------------------------------------------------------------ | ----------------------------------- |
 | Long option name starts with `-` or `_`, or contains invalid chars | exits                               |
-| Short option name is not alphanumeric                              | exits                               |
+| Short option name is not alphanumeric or `?`                       | exits                               |
 | Long option name is `"help"` (reserved)                            | exits                               |
 | `OPT_ACT_COUNT` paired with a type other than `TYPE_USIZE`         | exits                               |
 | Duplicate long or short option name on the same command            | exits                               |

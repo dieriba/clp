@@ -17,7 +17,7 @@
 
 static bool is_valid_short(char shrt)
 {
-    return isalnum(shrt);
+    return isalnum((unsigned char) shrt) || shrt == '?';
 }
 
 Command *clp_new_command(int code, char *name, char *description)
@@ -53,7 +53,7 @@ Option *clp_new_option_raw(char *long_name, char *short_name, char *description,
     if (short_name)
     {
         if (is_valid_short(*short_name) == false)
-            clp_invalid_arg_exit("'-%c' is not a valid option name\na short option must be a single alphanumeric character [a-z A-Z 0-9]\n", *short_name);
+            clp_invalid_arg_exit("'-%c' is not a valid option name\na short option must be a single alphanumeric character [a-z A-Z 0-9] or '?'\n", *short_name);
         shrt_name = *short_name;
     }
     if (long_name)
