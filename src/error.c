@@ -61,7 +61,7 @@ const char *clp_status_to_str(ClpStatus code)
     case CLP_ERR_ALLOC:
         return "allocation failure";
     case CLP_ERR_INVALID_NAME:
-        return "invalid option name";
+        return "invalid name";
     case CLP_ERR_UNKNOWN_OPTION:
         return "unknown option";
     case CLP_ERR_MISSING_ARG:
@@ -76,6 +76,16 @@ const char *clp_status_to_str(ClpStatus code)
         return "too many operands";
     case CLP_ERR_MISSING_REQUIRED:
         return "missing required argument";
+    case CLP_ERR_DUPLICATE:
+        return "duplicate option";
+    case CLP_ERR_RESERVED_NAME:
+        return "reserved name";
+    case CLP_ERR_INVALID_TYPE:
+        return "invalid type for action";
+    case CLP_ERR_CONFLICT:
+        return "operands and subcommands conflict";
+    case CLP_ERR_OPERAND_ORDER:
+        return "required operand after optional operand";
     }
     return "unknown status";
 }

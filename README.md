@@ -207,12 +207,17 @@ clp_add_command_option(&root, &token);
 ### Lifecycle
 
 ```c
-Command *clp_new_command(int code, char *name, char *description);
-void clp_add_command_option(Command *command, Option *option);
-void clp_add_command_operand(Command *command, Operand *operand);
-void clp_add_command_sub_command(Command *command, Command *sub_command);
-void clp_parse_args(Command *root, char **argv, Command **command);
-void clp_cleanup(Command *root);
+/* Builders never exit: they return a ClpStatus and fill err (may be NULL). */
+ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpError *err);
+ClpStatus clp_add_command_option(Command *command, Option *option, ClpError *err);
+ClpStatus clp_add_command_operand(Command *command, Operand *operand, ClpError *err);
+ClpStatus clp_add_command_sub_command(Command *command, Command *sub_command, ClpError *err);
+
+ClpStatus clp_try_parse_args(Command *root, char **argv, Command **command, ClpError *err);
+void      clp_parse_args(Command *root, char **argv, Command **command); /* exits on error */
+void      clp_print_error(FILE *stream, const ClpError *err);
+const char *clp_status_to_str(ClpStatus code);
+void      clp_cleanup(Command *root);
 ```
 
 ### Lookup
@@ -226,15 +231,16 @@ Operand *clp_get_operand        (Command *command, DStringView name);
 ### Raw initializers (full control)
 
 ```c
-void clp_init_option_raw(Option  *opt, char *long_name, char *short_name,
-                         char *description, bool has_default_value,
-                         OptAction action, Value value,
-                         Type type, bool required, bool global);
+ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name,
+                             char *description, bool has_default_value,
+                             OptAction action, Value value,
+                             Type type, bool required, bool global, ClpError *err);
 
-void clp_new_operand_raw  (Operand *op,  char *name, char *description,
-                         bool has_default_value,
-                         OperandAction action, Value value,
-                         Type type, bool required);
+ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description,
+                              bool has_default_value,
+                              OperandAction action, Value value,
+                              Type type, bool required, ClpError *err);
+/* every clp_new_option_* / clp_new_operand_* macro takes `out` first and `err` last */
 ```
 
 ### Option convenience macros

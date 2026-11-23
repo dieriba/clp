@@ -63,11 +63,19 @@
  *
  * QUICK START
  * -----------
- *   Command *root    = clp_new_command(0, "prog", "my program");
- *   Option  *verbose = clp_new_option("verbose", "v", "enable verbose output", TYPE_BOOL, false, false);
- *   Operand *file    = clp_new_operand("file", "input file", TYPE_STR, true);
- *   clp_add_command_option(root, verbose);
- *   clp_add_command_operand(root, file);
+ *   ClpError err;
+ *   Command *root;
+ *   Option  *verbose;
+ *   Operand *file;
+ *   if (clp_new_command(&root, 0, "prog", "my program", &err) != CLP_OK ||
+ *       clp_new_option(&verbose, "verbose", "v", "enable verbose output", TYPE_BOOL, false, false, &err) != CLP_OK ||
+ *       clp_add_command_option(root, verbose, &err) != CLP_OK ||
+ *       clp_new_operand(&file, "file", "input file", TYPE_STR, true, &err) != CLP_OK ||
+ *       clp_add_command_operand(root, file, &err) != CLP_OK)
+ *   {
+ *       clp_print_error(stderr, &err);
+ *       return 1;
+ *   }
  *   Command *cmd = NULL;
  *   clp_parse_args(root, argv, &cmd);
  *   if (verbose->value_set) { ... }
@@ -81,8 +89,8 @@
  *                         exit(EXIT_FAILURE); "--help" exits with EXIT_SUCCESS.
  *   clp_try_parse_args  — never exits; returns a ClpStatus and fills a ClpError
  *                         so the caller decides what to do.
- * Builder errors (bad option names, duplicates, OOM while building the command
- * tree) still print a message to stderr and call exit(EXIT_FAILURE).
+ * Builder functions (clp_new_*, clp_add_*) never exit either: they return a
+ * ClpStatus and fill a ClpError (see BUILDER ERRORS below).
  * Programming errors (NULL passed to a parameter documented as must not be NULL)
  * are caught by assert and call abort() in debug builds.
  */
@@ -97,44 +105,43 @@
 
 #include <stdio.h>
 
-#define clp_new_option(long_name, short_name, description, type, required, global) clp_new_option_raw(long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global)
+#define clp_new_option(out, long_name, short_name, description, type, required, global, err) clp_new_option_raw(out, long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global, err)
 
-#define clp_new_option_default_long(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob)
+#define clp_new_option_default_long(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob, err)
 
-#define clp_new_option_default_bool(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob)
+#define clp_new_option_default_bool(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob, err)
 
-#define clp_new_option_default_usize(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob)
+#define clp_new_option_default_usize(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob, err)
 
-#define clp_new_option_default_str(ln, sn, desc, def, req, glob)                                                                                                                                       \
-    clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob)
+#define clp_new_option_default_str(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob, err)
 
-#define clp_new_option_default_char(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob)
+#define clp_new_option_default_char(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob, err)
 
-#define clp_new_option_default_double(ln, sn, desc, def, req, glob) clp_new_option_raw(ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob)
+#define clp_new_option_default_double(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob, err)
 
-#define clp_new_option_count(ln, sn, desc, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_COUNT, (Value) {0}, TYPE_USIZE, false, glob)
+#define clp_new_option_count(out, ln, sn, desc, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_COUNT, (Value) {0}, TYPE_USIZE, false, glob, err)
 
-#define clp_new_option_list(ln, sn, desc, required, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob)
+#define clp_new_option_list(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob, err)
 
-#define clp_new_option_kv(ln, sn, desc, required, glob) clp_new_option_raw(ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob)
+#define clp_new_option_kv(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob, err)
 
-#define clp_new_operand(name, description, type, required) clp_new_operand_raw(name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required)
+#define clp_new_operand(out, name, description, type, required, err) clp_new_operand_raw(out, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required, err)
 
-#define clp_new_operand_default_long(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req)
+#define clp_new_operand_default_long(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, err)
 
-#define clp_new_operand_default_bool(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req)
+#define clp_new_operand_default_bool(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, err)
 
-#define clp_new_operand_default_usize(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req)
+#define clp_new_operand_default_usize(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, err)
 
-#define clp_new_operand_default_str(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req)
+#define clp_new_operand_default_str(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, err)
 
-#define clp_new_operand_default_char(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req)
+#define clp_new_operand_default_char(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, err)
 
-#define clp_new_operand_default_double(name, desc, def, req) clp_new_operand_raw(name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req)
+#define clp_new_operand_default_double(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, err)
 
-#define clp_new_operand_list(name, desc, required) clp_new_operand_raw(name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required)
+#define clp_new_operand_list(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required, err)
 
-#define clp_new_operand_kv(name, desc, required) clp_new_operand_raw(name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required)
+#define clp_new_operand_kv(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required, err)
 
 typedef enum Type
 {
@@ -205,7 +212,7 @@ typedef enum ClpStatus
     CLP_OK = 0,
     CLP_HELP_SHOWN,            /* help was printed to stdout; not an error, but parsing stopped */
     CLP_ERR_ALLOC,             /* allocation / container failure */
-    CLP_ERR_INVALID_NAME,      /* malformed option name on the command line (e.g. "--_x") */
+    CLP_ERR_INVALID_NAME,      /* malformed option/operand name, at registration or on the command line (e.g. "--_x") */
     CLP_ERR_UNKNOWN_OPTION,    /* option not registered on the command */
     CLP_ERR_MISSING_ARG,       /* option requires an argument and none was given */
     CLP_ERR_UNEXPECTED_ARG,    /* "--flag=value" on an option that takes no argument */
@@ -213,6 +220,11 @@ typedef enum ClpStatus
     CLP_ERR_BAD_KV,            /* malformed key=value pair */
     CLP_ERR_TOO_MANY_OPERANDS, /* more positional arguments than registered operands */
     CLP_ERR_MISSING_REQUIRED,  /* one or more required options/operands were not provided */
+    CLP_ERR_DUPLICATE,         /* option registered twice on the same command (same long or short name) */
+    CLP_ERR_RESERVED_NAME,     /* option uses a reserved name (e.g. "help") */
+    CLP_ERR_INVALID_TYPE,      /* action/type combination not allowed (e.g. count action on a non-usize type) */
+    CLP_ERR_CONFLICT,          /* command would have both operands and subcommands */
+    CLP_ERR_OPERAND_ORDER,     /* required operand registered after an optional one */
 } ClpStatus;
 
 typedef struct Command Command;
@@ -241,7 +253,16 @@ typedef struct ClpError
 /* Return a short static string naming code (e.g. "unknown option"). */
 const char *clp_status_to_str(ClpStatus code);
 
-/* Allocate and initialise a new Command on the heap; returns the pointer.
+/* BUILDER ERRORS
+ * --------------
+ * Every builder function (clp_new_*, clp_add_*) returns a ClpStatus and takes a
+ * trailing ClpError *err.  On failure the matching CLP_ERR_* code is returned
+ * and, when err is not NULL, *err is filled (print it with clp_print_error).
+ * err may be NULL.  Constructors write the new object to *out on success and
+ * set *out to NULL on failure; out must not be NULL.
+ */
+
+/* Allocate and initialise a new Command on the heap and store it in *out.
  *
  *   code        — user-defined integer identifier; useful for switch dispatch
  *                 after clp_parse_args returns the matched subcommand.
@@ -251,40 +272,50 @@ const char *clp_status_to_str(ClpStatus code);
  *                 "no associated description").
  *
  * The returned pointer is owned by the caller.  Pass it to clp_cleanup to
- * release the command and all its descendant resources.  name must not be NULL.
+ * release the command and all its descendant resources.  out and name must not be NULL.
+ *
+ * Returns CLP_OK, or CLP_ERR_ALLOC.
  */
-Command *clp_new_command(int code, char *name, char *description);
+ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpError *err);
 
 /* Attach sub_command as a child of command.
  *
  * Sets sub_command->parent_command = command.  A command cannot have both
- * operands and subcommands; attempting to do so exits.
+ * operands and subcommands.
  *
- * command and sub_command must not be NULL. Exits if command already has operands registered.
+ * command and sub_command must not be NULL.
+ * Returns CLP_OK, CLP_ERR_CONFLICT if command already has operands, or CLP_ERR_ALLOC.
+ * On failure sub_command is not attached and is still owned by the caller.
  */
-void clp_add_command_sub_command(Command *command, Command *sub_command);
+ClpStatus clp_add_command_sub_command(Command *command, Command *sub_command, ClpError *err);
 
 /* Register an option on a command.
  *
  * command and command_option must not be NULL.
- * Duplicate long or short names on the same command cause an exit.
+ * Returns CLP_OK, CLP_ERR_DUPLICATE if the long or short name is already
+ * registered on command, or CLP_ERR_ALLOC.
+ * On failure command_option is not added and is still owned by the caller.
  */
-void clp_add_command_option(Command *command, Option *command_option);
+ClpStatus clp_add_command_option(Command *command, Option *command_option, ClpError *err);
 
 /* Register an operand on a command.
  *
  * Operands are consumed in registration order.  A required operand must not
- * follow an optional one.  A duplicate operand name emits a warning to stderr
- * but does not exit.  A command cannot have both operands and subcommands.
+ * follow an optional one.  A duplicate operand name is accepted (a warning is
+ * printed when built with -DWARNING).  A command cannot have both operands and
+ * subcommands.
  *
  * command and command_operand must not be NULL.
- * Exits if subcommands are already present or on a required-after-optional ordering violation.
+ * Returns CLP_OK, CLP_ERR_CONFLICT if subcommands are already present,
+ * CLP_ERR_OPERAND_ORDER on a required-after-optional ordering violation, or
+ * CLP_ERR_ALLOC.  On failure command_operand is not added and is still owned
+ * by the caller.
  */
-void clp_add_command_operand(Command *command, Operand *command_operand);
+ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, ClpError *err);
 
 /* Low-level option allocator — prefer the clp_new_option* macros.
  *
- * Allocates a new Option on the heap and returns the pointer.  The returned
+ * Allocates a new Option on the heap and stores it in *out.  The new
  * Option is owned by the command it is added to; clp_cleanup frees it.
  *
  *   long_name         — long option name without the "--" prefix, or NULL for
@@ -303,14 +334,16 @@ void clp_add_command_operand(Command *command, Operand *command_operand);
  *   required          — if true, clp_parse_args exits when the option is absent.
  *   global            — if true, the option is visible in all descendant commands.
  *
- * At least one of long_name or short_name must not be NULL.
- * Exits on invalid names, reserved name, or OPT_ACT_COUNT paired with a type other than TYPE_USIZE.
+ * out must not be NULL; at least one of long_name or short_name must not be NULL.
+ * Returns CLP_OK, CLP_ERR_INVALID_NAME, CLP_ERR_RESERVED_NAME, CLP_ERR_INVALID_TYPE
+ * (OPT_ACT_COUNT paired with a type other than TYPE_USIZE), or CLP_ERR_ALLOC.
  */
-Option *clp_new_option_raw(char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global);
+ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global,
+                             ClpError *err);
 
 /* Low-level operand allocator — prefer the clp_new_operand* macros.
  *
- * Allocates a new Operand on the heap and returns the pointer.  The returned
+ * Allocates a new Operand on the heap and stores it in *out.  The new
  * Operand is owned by the command it is added to; clp_cleanup frees it.
  *
  *   name              — operand name shown in usage and --help (e.g. "file").
@@ -325,9 +358,10 @@ Option *clp_new_option_raw(char *long_name, char *short_name, char *description,
  *   type              — value type.
  *   required          — if true, clp_parse_args exits when the operand is absent.
  *
- * name must not be NULL. Exits on an empty or invalid name.
+ * out and name must not be NULL.
+ * Returns CLP_OK, CLP_ERR_INVALID_NAME on an empty or invalid name, or CLP_ERR_ALLOC.
  */
-Operand *clp_new_operand_raw(char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required);
+ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required, ClpError *err);
 
 /* Parse argv against the command tree rooted at root.
  *

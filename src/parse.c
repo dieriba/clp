@@ -10,21 +10,12 @@
 #define NUMERIC "0123456789"
 #define UNDERSCORE "_"
 
-static bool is_valid_long(DStringView lng)
+bool is_valid_long(DStringView lng)
 {
     if (lng.size == 0 || lng.data[0] == '-' || lng.data[0] == '_' ||
         d_string_view_find_first_char_not_in_set_from_start(lng, D_STRING_VIEW_FROM_LITERAL(ALPHABET_LOWERCASE ALPHABET_UPPERCASE HYPHEN UNDERSCORE NUMERIC)) != MAX_SIZE_T_VALUE)
         return false;
     return true;
-}
-
-void exit_if_not_valid_long_opt_name(DStringView long_opt)
-{
-    if (is_valid_long(long_opt) == false)
-    {
-        clp_eprint("'--%s' is not a valid option name\n", long_opt.data);
-        clp_eprint_exit("a long option must start with a letter and contain only [a-z A-Z 0-9 -]\n");
-    }
 }
 
 static ClpStatus check_valid_long_opt_name(Command *root, DStringView long_opt, ClpError *err)
