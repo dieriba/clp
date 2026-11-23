@@ -294,7 +294,8 @@ ClpStatus clp_add_command_sub_command(Command *command, Command *sub_command, Cl
  * command and command_option must not be NULL.
  * Returns CLP_OK, CLP_ERR_DUPLICATE if the long or short name is already
  * registered on command, or CLP_ERR_ALLOC.
- * On failure command_option is not added and is still owned by the caller.
+ * On failure command_option is not added and is still owned by the caller;
+ * release it with clp_free_option.
  */
 ClpStatus clp_add_command_option(Command *command, Option *command_option, ClpError *err);
 
@@ -309,7 +310,7 @@ ClpStatus clp_add_command_option(Command *command, Option *command_option, ClpEr
  * Returns CLP_OK, CLP_ERR_CONFLICT if subcommands are already present,
  * CLP_ERR_OPERAND_ORDER on a required-after-optional ordering violation, or
  * CLP_ERR_ALLOC.  On failure command_operand is not added and is still owned
- * by the caller.
+ * by the caller; release it with clp_free_operand.
  */
 ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, ClpError *err);
 
@@ -317,6 +318,7 @@ ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, Cl
  *
  * Allocates a new Option on the heap and stores it in *out.  The new
  * Option is owned by the command it is added to; clp_cleanup frees it.
+ * Until it is added, it is owned by the caller: free it with clp_free_option.
  *
  *   long_name         — long option name without the "--" prefix, or NULL for
  *                       a short-only option.  Must start with a letter and
@@ -345,6 +347,7 @@ ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, ch
  *
  * Allocates a new Operand on the heap and stores it in *out.  The new
  * Operand is owned by the command it is added to; clp_cleanup frees it.
+ * Until it is added, it is owned by the caller: free it with clp_free_operand.
  *
  *   name              — operand name shown in usage and --help (e.g. "file").
  *                       Must not be NULL or empty.
@@ -419,7 +422,33 @@ Option *clp_get_option_by_long(Command *command, DStringView lng);
  */
 Operand *clp_get_operand(Command *command, DStringView operand_name);
 
-/* Recursively release all resources allocated inside the command tree.
+/* Release an Option that is not attached to any command, including its
+ * internal collection (LIST / KV actions).
+ *
+ * Use it only for options the caller still owns: one that was never passed to
+ * clp_add_command_option, or one whose clp_add_command_option call failed.
+ * Never call it on an option that was added to a command — clp_cleanup frees
+ * that one, and freeing it here too would be a double free.
+ *
+ * Passing NULL is a no-op, like free().
+ */
+void clp_free_option(Option *option);
+
+/* Release an Operand that is not attached to any command, including its
+ * internal collection (LIST / KV actions).
+ *
+ * Use it only for operands the caller still owns: one that was never passed to
+ * clp_add_command_operand, or one whose clp_add_command_operand call failed.
+ * Never call it on an operand that was added to a command — clp_cleanup frees
+ * that one, and freeing it here too would be a double free.
+ *
+ * Passing NULL is a no-op, like free().
+ */
+void clp_free_operand(Operand *operand);
+
+/* Recursively release all resources allocated inside the command tree:
+ * root, every subcommand, and every option and operand added to them.
+ * root must not be NULL.
  */
 void clp_cleanup(Command *root);
 #endif

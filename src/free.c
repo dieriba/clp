@@ -6,19 +6,39 @@
 
 #include <stdlib.h>
 
+void free_option(Option *option)
+{
+    if (option)
+    {
+        if (option->action == OPT_ACT_KV)
+            d_unordered_map_destroy(&option->value.value_kv);
+        else if (option->action == OPT_ACT_LIST)
+            d_dyn_array_destroy(&option->value.value_list);
+        free(option);
+    }
+}
+
 static void free_command_options(Command *root)
 {
     DDynArray *opts = &root->options;
     for (usize i = 0; i < opts->array.size; i++)
     {
         Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
-        if (opt->action == OPT_ACT_KV)
-            d_unordered_map_destroy(&opt->value.value_kv);
-        else if (opt->action == OPT_ACT_LIST)
-            d_dyn_array_destroy(&opt->value.value_list);
-        free(opt);
+        free_option(opt);
     }
     d_dyn_array_destroy(&root->options);
+}
+
+void free_operand(Operand *operand)
+{
+    if (operand)
+    {
+        if (operand->action == OPERAND_ACT_KV)
+            d_unordered_map_destroy(&operand->value.value_kv);
+        else if (operand->action == OPERAND_ACT_LIST)
+            d_dyn_array_destroy(&operand->value.value_list);
+        free(operand);
+    }
 }
 
 static void free_command_operands(Command *root)
@@ -27,11 +47,7 @@ static void free_command_operands(Command *root)
     for (usize i = 0; i < operands->array.size; i++)
     {
         Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
-        if (operand->action == OPERAND_ACT_KV)
-            d_unordered_map_destroy(&operand->value.value_kv);
-        else if (operand->action == OPERAND_ACT_LIST)
-            d_dyn_array_destroy(&operand->value.value_list);
-        free(operand);
+        free_operand(operand);
     }
 
     d_dyn_array_destroy(&root->operands);

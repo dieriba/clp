@@ -282,7 +282,7 @@ ClpStatus clp_try_parse_args(Command *root, char **argv, Command **command, ClpE
     assert(command != NULL);
     assert(argv != NULL && *argv != NULL);
     if (err)
-        *err = (ClpError) {0};
+        *err = (ClpError){0};
     *command = NULL;
     return parse(root, argv, command, err);
 }
@@ -298,6 +298,16 @@ void clp_parse_args(Command *root, char **argv, Command **command)
         exit(EXIT_SUCCESS);
     clp_print_error(stderr, &err);
     exit(EXIT_FAILURE);
+}
+
+void clp_free_option(Option *option)
+{
+    free_option(option);
+}
+
+void clp_free_operand(Operand *operand)
+{
+    free_operand(operand);
 }
 
 void clp_cleanup(Command *root)
