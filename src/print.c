@@ -174,9 +174,10 @@ void print_usage_line(FILE *stream, Command *command)
             Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
             if (operand->required == false)
                 continue;
-            fprintf(stream, "<%s>", operand->name.data);
+            fprintf(stream, "<%s", operand->name.data);
             if (operand->action == OPERAND_ACT_LIST)
-                fprintf(stream, "...");
+                fprintf(stream, " ...");
+            fprintf(stream, ">");
             fprintf(stream, " ");
         }
     }
