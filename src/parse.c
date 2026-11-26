@@ -16,6 +16,29 @@
 #define NUMERIC "0123456789"
 #define UNDERSCORE "_"
 
+
+static Option *find_option_by_short(Command *command, char shrt)
+{
+    for (Command *level = command; level != NULL; level = level->parent_command)
+    {
+        Option *opt = clp_get_option_by_short(level, shrt);
+        if (opt != NULL && (level == command || opt->global))
+            return opt;
+    }
+    return NULL;
+}
+
+static Option *find_option_by_long(Command *command, DStringView lng)
+{
+    for (Command *level = command; level != NULL; level = level->parent_command)
+    {
+        Option *opt = clp_get_option_by_long(level, lng);
+        if (opt != NULL && (level == command || opt->global))
+            return opt;
+    }
+    return NULL;
+}
+
 bool is_valid_long(DStringView lng)
 {
     if (lng.size == 0 || lng.data[0] == '-' || lng.data[0] == '_' ||
@@ -114,7 +137,7 @@ static ClpStatus bind_opt_value(Command *root, Option *opt, const char *operand,
         const char *err_msg;
         if (opt->transform)
         {
-            if ((err_msg = opt->transform(operand)) != NULL)
+            if ((err_msg = opt->transform(operand, opt->dest)) != NULL)
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '%s%.*s': %s\n", root->name.data, operand, prefix, (int) len_name, opt_name, err_msg);
             break;
         }
@@ -182,7 +205,7 @@ static ClpStatus bind_operand_value(Command *root, usize cursor, char *raw_opera
         const char *err_msg;
         if (operand->transform)
         {
-            if ((err_msg = operand->transform(raw_operand)) != NULL)
+            if ((err_msg = operand->transform(raw_operand, operand->dest)) != NULL)
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '<%s>': %s\n", root->name.data, raw_operand, operand->name.data, err_msg);
             argv++;
             break;
@@ -246,7 +269,7 @@ static ClpStatus parse_long_opt(Command *root, char *lng_opt, char ***argvp, Clp
     if (has_inline_value)
         long_opt = d_string_view_subview(long_opt, 0, eq_pos);
     CLP_TRY(check_valid_long_opt_name(root, long_opt, err));
-    Option *opt = clp_get_option_by_long(root, long_opt);
+    Option *opt = find_option_by_long(root, long_opt);
     CLP_TRY(check_help_or_invalid_opt(root, opt, DOUBLE_HYPHEN, long_opt.data, long_opt.size, err));
     if (has_inline_value && opt->has_args == false)
         return error_fail(err, CLP_ERR_UNEXPECTED_ARG, root, "command %s: option '--%s' doesn't allow an argument\n", root->name.data, opt->long_name.data);
@@ -262,7 +285,7 @@ static ClpStatus parse_short_opts(Command *root, char *short_opt, char ***argvp,
     usize  i    = 0;
     do
     {
-        Option *opt = clp_get_option_by_short(root, short_opt[i]);
+        Option *opt = find_option_by_short(root, short_opt[i]);
         CLP_TRY(check_help_or_invalid_opt(root, opt, HYPHEN, &short_opt[i], 1, err));
         if (opt->has_args == true)
         {
@@ -289,23 +312,6 @@ static ClpStatus interpret_hyphen(Command *root, char *arg, char ***argvp, usize
     return parse_short_opts(root, arg, argvp, err);
 }
 
-static ClpStatus command_collect_parent_commands_options(Command *command, ClpError *err)
-{
-    Command   *root = command;
-    DDynArray *opts = &command->options;
-
-    while ((command = command->parent_command) != NULL)
-    {
-        DDynArray *curr_opts = &command->options;
-        for (size_t i = 0; i < d_dyn_array_get_size(curr_opts); i++)
-        {
-            Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(curr_opts, i);
-            if (opt->global && d_dyn_array_push_back_ptr(opts, opt) != D_OK)
-                return error_fail(err, CLP_ERR_ALLOC, root, "out of memory\n");
-        }
-    }
-    return CLP_OK;
-}
 
 ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err)
 {
@@ -350,6 +356,5 @@ ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err)
         CLP_TRY(bind_operand_value(root, cmd_parsed_operand++, s, &argv, false, err));
     }
 
-    CLP_TRY(command_collect_parent_commands_options(root, err));
     return check_required_args(root, err);
 }

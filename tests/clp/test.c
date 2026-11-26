@@ -3613,7 +3613,7 @@ static void test_dest_count_list_kv(void)
     d_unordered_map_destroy(&env);
 }
 
-/* ── transform (TYPE_CUSTOM, no dest) ───────────────────────────────────── */
+/* ── transform (TYPE_CUSTOM, dest is the ctx) ───────────────────────────────────── */
 
 typedef enum
 {
@@ -3626,14 +3626,15 @@ static TsType      ts_seen;
 static int         transform_calls;
 static const char *last_transform_arg;
 
-static const char *parse_ts(const char *arg)
+static const char *parse_ts(const char *arg, void *ctx)
 {
+    TsType *out = ctx;
     transform_calls++;
     last_transform_arg = arg;
     if (strcmp(arg, "tsonly") == 0)
-        ts_seen = TS_ONLY;
+        *out = TS_ONLY;
     else if (strcmp(arg, "tsaddr") == 0)
-        ts_seen = TS_ADDR;
+        *out = TS_ADDR;
     else
         return "expected \"tsonly\" or \"tsaddr\"";
     return NULL;
@@ -3652,8 +3653,8 @@ static void test_option_transform_receives_raw_arg(void)
     for (usize i = 0; i < 4; i++)
     {
         Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
-        Option  *ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", "t", NULL, parse_ts, false, false);
-        D_TEST_EXPR(ts->type == TYPE_CUSTOM && ts->has_args && ts->dest == NULL && ts->checker == NULL);
+        Option  *ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", "t", NULL, parse_ts, &ts_seen, false, false);
+        D_TEST_EXPR(ts->type == TYPE_CUSTOM && ts->has_args && ts->dest == &ts_seen && ts->checker == NULL);
         T_ADD(clp_add_command_option, root, ts);
         Command *cmd    = NULL;
         ts_seen         = TS_NONE;
@@ -3669,7 +3670,7 @@ static void test_option_transform_rejects_and_absent(void)
 {
     ClpError e;
     Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
-    Option  *ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, false, false);
+    Option  *ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false);
     T_ADD(clp_add_command_option, root, ts);
     char    *bad[] = {"prog", "--ip-timestamp", "tsfoo", NULL};
     Command *cmd   = NULL;
@@ -3680,7 +3681,7 @@ static void test_option_transform_rejects_and_absent(void)
     clp_cleanup(root);
 
     root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
-    ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, false, false);
+    ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false);
     T_ADD(clp_add_command_option, root, ts);
     char *absent[]  = {"prog", NULL};
     char *missing[] = {"prog", "--ip-timestamp", NULL};
@@ -3698,7 +3699,7 @@ static void test_option_transform_required(void)
 {
     ClpError e;
     Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, true, false));
+    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, true, false));
     char    *argv[] = {"prog", NULL};
     Command *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_MISSING_REQUIRED);
@@ -3710,7 +3711,7 @@ static void test_operand_transform(void)
 {
     ClpError e;
     Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
-    Operand *mode = T_NEW(Operand, clp_new_operand_transform, "mode", NULL, parse_ts, true);
+    Operand *mode = T_NEW(Operand, clp_new_operand_transform, "mode", NULL, parse_ts, &ts_seen, true);
     T_ADD(clp_add_command_operand, root, mode);
     char    *ok[] = {"prog", "tsaddr", NULL};
     Command *cmd  = NULL;
@@ -3721,7 +3722,7 @@ static void test_operand_transform(void)
     clp_cleanup(root);
 
     root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
-    mode = T_NEW(Operand, clp_new_operand_transform, "mode", NULL, parse_ts, true);
+    mode = T_NEW(Operand, clp_new_operand_transform, "mode", NULL, parse_ts, &ts_seen, true);
     T_ADD(clp_add_command_operand, root, mode);
     char *bad[] = {"prog", "nope", NULL};
     cmd         = NULL;
@@ -3759,7 +3760,7 @@ static void test_transform_help_shows_value(void)
         close(pipefd[0]);
         dup2(pipefd[1], STDOUT_FILENO);
         Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
-        T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, false, false));
+        T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false));
         char    *argv[] = {"prog", "--help", NULL};
         Command *cmd    = NULL;
         clp_parse_args(root, argv, &cmd);
@@ -3814,6 +3815,179 @@ static void test_conversion_failure_is_reported(void)
     D_TEST_EXPR(ttl == 64);
     clp_cleanup(root);
 }
+
+/* one transform shared by two options: each result goes to its own ctx */
+static void test_transform_ctx_shared_by_two_options(void)
+{
+    ClpError e;
+    TsType   in = TS_NONE, out = TS_NONE;
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "in", NULL, NULL, parse_ts, &in, false, false));
+    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "out", NULL, NULL, parse_ts, &out, false, false));
+    char    *argv[] = {"prog", "--in", "tsonly", "--out=tsaddr", NULL};
+    Command *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(in == TS_ONLY && out == TS_ADDR);
+    clp_cleanup(root);
+}
+
+/* a NULL ctx is passed through as is */
+static void *seen_ctx = (void *) 1;
+static const char *record_ctx(const char *arg, void *ctx)
+{
+    (void) arg;
+    seen_ctx = ctx;
+    return NULL;
+}
+
+static void test_transform_null_ctx(void)
+{
+    ClpError e;
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    T_ADD(clp_add_command_operand, root, T_NEW(Operand, clp_new_operand_transform, "x", NULL, record_ctx, NULL, true));
+    char    *argv[] = {"prog", "v", NULL};
+    Command *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_NULL(seen_ctx);
+    clp_cleanup(root);
+}
+
+/* ── list / kv init helpers ─────────────────────────────────────────────── */
+
+static void test_list_and_kv_init_helpers(void)
+{
+    ClpError      e;
+    DDynArray     tags;
+    DUnorderedMap env;
+    D_TEST_EXPR(clp_list_init(&tags, &e) == CLP_OK);
+    D_TEST_EXPR(clp_kv_init(&env, &e) == CLP_OK);
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_list, "tag", "t", NULL, &tags, false, false));
+    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_kv, "env", "e", NULL, &env, false, false));
+    char    *argv[] = {"prog", "-t", "a,b", "--tag=c", "-e", "K=V,X=Y", NULL};
+    Command *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(d_dyn_array_get_size(&tags) == 3);
+    DStringView first = {0};
+    D_TEST_EXPR(d_dyn_array_get_elem_at(&tags, 0, &first) == D_OK && d_string_view_compare_against_c_string(first, "a"));
+    DStringView  key   = D_STRING_VIEW_FROM_LITERAL("X");
+    DStringView *value = d_unordered_map_get(&env, &key);
+    D_TEST_EXPR(value != NULL && d_string_view_compare_against_c_string(*value, "Y"));
+    clp_cleanup(root);
+    clp_list_destroy(&tags);
+    clp_kv_destroy(&env);
+}
+
+/* ── global options looked up in ancestors ──────────────────────────────── */
+
+static Command *build_global_tree(Command **sub_out, Option **verbose_out, Option **token_out, bool *verbose, DStringView *token, bool token_required)
+{
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    Command *sub  = T_NEW(Command, clp_new_command, 1, "sub", NULL);
+    Option  *v    = T_NEW(Option, clp_new_option, "verbose", "v", NULL, verbose, false, true);
+    Option  *t    = T_NEW(Option, clp_new_option, "token", "T", NULL, token, token_required, true);
+    T_ADD(clp_add_command_option, root, v);
+    T_ADD(clp_add_command_option, root, t);
+    T_ADD(clp_add_command_sub_command, root, sub);
+    *sub_out     = sub;
+    *verbose_out = v;
+    *token_out   = t;
+    return root;
+}
+
+/* a global option is accepted after the subcommand name, long and short */
+static void test_global_option_after_subcommand_name(void)
+{
+    char *forms[][4] = {
+        {"prog", "sub", "--verbose", NULL},
+        {"prog", "sub", "-v", NULL},
+        {"prog", "-v", "sub", NULL},
+    };
+    for (usize i = 0; i < 3; i++)
+    {
+        ClpError    e;
+        bool        verbose = false;
+        DStringView token   = {0};
+        Command    *sub;
+        Option     *v, *t;
+        Command    *root = build_global_tree(&sub, &v, &t, &verbose, &token, false);
+        Command    *cmd  = NULL;
+        D_TEST_EXPR(clp_try_parse_args(root, forms[i], &cmd, &e) == CLP_OK);
+        D_TEST_EXPR(cmd == sub && verbose == true && v->value_set);
+        clp_cleanup(root);
+    }
+}
+
+/* regression: globals are no longer copied into the child, so cleanup frees
+ * each option once (this used to double free; run under valgrind) */
+static void test_global_option_not_copied_into_child(void)
+{
+    ClpError    e;
+    bool        verbose = false;
+    DStringView token   = {0};
+    Command    *sub;
+    Option     *v, *t;
+    Command    *root   = build_global_tree(&sub, &v, &t, &verbose, &token, false);
+    char       *argv[] = {"prog", "sub", "--", NULL};
+    Command    *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(d_dyn_array_get_size(&sub->options) == 0);
+    D_TEST_EXPR(clp_get_option_by_long(sub, D_STRING_VIEW_FROM_LITERAL("verbose")) == NULL);
+    clp_cleanup(root);
+}
+
+/* a required global is enforced on the subcommand even when it gets no args */
+static void test_required_global_checked_when_child_has_no_args(void)
+{
+    ClpError    e;
+    bool        verbose = false;
+    DStringView token   = {0};
+    Command    *sub;
+    Option     *v, *t;
+    Command    *root   = build_global_tree(&sub, &v, &t, &verbose, &token, true);
+    char       *argv[] = {"prog", "sub", NULL};
+    Command    *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_MISSING_REQUIRED);
+    D_TEST_NOT_NULL(strstr(e.message, "--token"));
+    D_TEST_EXPR(e.command == sub);
+    char *ok[] = {"prog", "sub", "--token", "abc", NULL};
+    D_TEST_EXPR(clp_try_parse_args(root, ok, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(d_string_view_compare_against_c_string(token, "abc"));
+    clp_cleanup(root);
+}
+
+/* a subcommand's own option shadows an ancestor global with the same name */
+static void test_child_option_shadows_parent_global(void)
+{
+    ClpError    e;
+    bool        verbose = false, child_verbose = false;
+    DStringView token   = {0};
+    Command    *sub;
+    Option     *v, *t;
+    Command    *root = build_global_tree(&sub, &v, &t, &verbose, &token, false);
+    T_ADD(clp_add_command_option, sub, T_NEW(Option, clp_new_option, "verbose", "v", NULL, &child_verbose, false, false));
+    char    *argv[] = {"prog", "sub", "-v", NULL};
+    Command *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(child_verbose == true && verbose == false);
+    clp_cleanup(root);
+}
+
+/* a non-global parent option stays unknown in the subcommand */
+static void test_non_global_parent_option_unknown_in_child(void)
+{
+    ClpError e;
+    bool     local = false;
+    Command *root  = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    Command *sub   = T_NEW(Command, clp_new_command, 1, "sub", NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option, "local", "l", NULL, &local, false, false));
+    T_ADD(clp_add_command_sub_command, root, sub);
+    char    *argv[] = {"prog", "sub", "--local", NULL};
+    Command *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_UNKNOWN_OPTION);
+    clp_cleanup(root);
+}
+
 
 int main(void)
 {
@@ -4007,6 +4181,15 @@ int main(void)
         D_TEST_GENERATE_TEST(test_help_output_includes_commands_section),
         D_TEST_GENERATE_TEST(test_help_output_includes_arguments_section),
         D_TEST_GENERATE_TEST(test_help_on_subcommand_shows_subcommand_info),
+        /* transform ctx, list/kv init, global lookup */
+        D_TEST_GENERATE_TEST(test_transform_ctx_shared_by_two_options),
+        D_TEST_GENERATE_TEST(test_transform_null_ctx),
+        D_TEST_GENERATE_TEST(test_list_and_kv_init_helpers),
+        D_TEST_GENERATE_TEST(test_global_option_after_subcommand_name),
+        D_TEST_GENERATE_TEST(test_global_option_not_copied_into_child),
+        D_TEST_GENERATE_TEST(test_required_global_checked_when_child_has_no_args),
+        D_TEST_GENERATE_TEST(test_child_option_shadows_parent_global),
+        D_TEST_GENERATE_TEST(test_non_global_parent_option_unknown_in_child),
     };
     D_TEST_RUN_TESTS(tests);
     return 0;

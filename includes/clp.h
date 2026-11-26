@@ -41,11 +41,12 @@
  * OPERAND_ACT_KV   — inserts one positional argument of comma-separated key=value
  *                    pairs into dest (DUnorderedMap).
  *
- * LIST and KV collections are not created by clp.  Initialise them before
- * parsing, with exactly these element types, or parsing corrupts memory
- * (KV users include "d_unordered_map.h" themselves; clp.h does not):
- *   d_dyn_array_init(&list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE);
- *   d_unordered_map_init_not_owned_d_string_view_key(&map, sizeof(DStringView), 1, NULL);
+ * LIST and KV collections are owned by the caller.  Create them with
+ * clp_list_init / clp_kv_init before parsing (they use the element types the
+ * parser expects) and release them with clp_list_destroy / clp_kv_destroy:
+ *   DDynArray     tags;
+ *   DUnorderedMap env;
+ *   if (clp_list_init(&tags, &err) != CLP_OK || clp_kv_init(&env, &err) != CLP_OK) ...
  * Stored DStringViews point into argv and stay valid as long as argv does.
  *
  * VALUE TYPES (SET)
@@ -56,7 +57,7 @@
  * TYPE_LONG   → long *
  * TYPE_USIZE  → usize *
  * TYPE_DOUBLE → double *
- * TYPE_CUSTOM → no dest; the raw argument goes to a ClpTransform
+ * TYPE_CUSTOM → no dest; the raw argument goes to a ClpTransform with its ctx
  *
  * The value in dest when parsing ends is the result: what was parsed if the
  * option/operand was given, otherwise whatever the caller put there first
@@ -67,8 +68,11 @@
  * ----------
  * For arguments the built-in types cannot express (enums, hex patterns, ...),
  * clp_new_option_transform / clp_new_operand_transform take a ClpTransform
- * instead of a dest.  It receives the raw argument and does whatever it wants
- * with it; clp only tracks value_set and required.  SET only, no checker.
+ * and a ctx pointer instead of a dest.  The transform receives the raw
+ * argument and ctx, untouched, and does whatever it wants with them — usually
+ * parse arg and store the result through ctx.  Passing the target through ctx
+ * lets one transform serve several options.  clp only tracks value_set and
+ * required.  SET only, no checker.
  *
  * PARSING RULES
  * -------------
@@ -78,8 +82,12 @@
  * - "-h" triggers help only when the user has not registered their own -h option.
  * - "help" is a reserved long option name.
  * - Required operands must be registered before optional ones.
- * - Global options (global=true) are inherited by all descendant commands and are
- *   checked for required status at each level that requires them.
+ * - Global options (global=true) are visible in all descendant commands and may
+ *   appear before or after the subcommand token.  They are looked up in the
+ *   ancestors (nearest first) when the command being parsed has no option of
+ *   that name, never copied into it, so a command's own option shadows an
+ *   ancestor global of the same name.  Required globals are checked on the
+ *   dispatched command, even when it gets no arguments.
  *
  * OPTION NAME RULES
  * -----------------
@@ -114,15 +122,16 @@
  *   printf("%s %ld %d\n", file.data, jobs, verbose);
  *   clp_cleanup(root);
  *
- * A transform option (no dest; the callback stores what it wants):
- *   static Mode mode = MODE_FAST;
- *   static const char *parse_mode(const char *arg)
+ * A transform option (no dest; the callback stores through its ctx):
+ *   Mode mode = MODE_FAST;                 // default value
+ *   static const char *parse_mode(const char *arg, void *ctx)
  *   {
- *       if (strcmp(arg, "fast") == 0) { mode = MODE_FAST; return NULL; }
- *       if (strcmp(arg, "safe") == 0) { mode = MODE_SAFE; return NULL; }
+ *       Mode *out = ctx;
+ *       if (strcmp(arg, "fast") == 0) { *out = MODE_FAST; return NULL; }
+ *       if (strcmp(arg, "safe") == 0) { *out = MODE_SAFE; return NULL; }
  *       return "expected \"fast\" or \"safe\"";
  *   }
- *   clp_new_option_transform(&mode_opt, "mode", "m", "run mode", parse_mode, false, false, &err);
+ *   clp_new_option_transform(&mode_opt, "mode", "m", "run mode", parse_mode, &mode, false, false, &err);
  *
  * ERROR HANDLING
  * --------------
@@ -145,6 +154,9 @@
 #include "d_types.h"
 #include <stdio.h>
 
+/* Declared here so KV users need not include "d_unordered_map.h". */
+typedef struct DUnorderedMap DUnorderedMap;
+
 /* CONSTRUCTOR MACROS
  * ------------------
  * Every value is written straight into a variable the caller owns (dest).
@@ -158,14 +170,15 @@
  *   DStringView * → TYPE_STR        double * → TYPE_DOUBLE
  * Any other pointer type is a compile error.  COUNT takes a usize *, LIST a
  * DDynArray * and KV a DUnorderedMap *; anything else is a compile error too.
- * LIST and KV collections must be initialised by the caller (see OPTION
- * ACTIONS) and destroyed by the caller after use.
+ * LIST and KV collections must be created by the caller with clp_list_init /
+ * clp_kv_init and released with clp_list_destroy / clp_kv_destroy.
  *
  * The _checked variants also take a ClpChecker (see ClpChecker).
  *
- * The _transform variants take no dest: the ClpTransform receives the raw
- * argument and handles it however it wants (custom parsing, storing it
- * anywhere, or nothing at all).  clp only tracks value_set and required.
+ * The _transform variants take a ClpTransform and a ctx instead of a dest:
+ * the transform receives the raw argument and ctx (passed through untouched,
+ * may be NULL) and handles it however it wants (custom parsing, storing the
+ * result through ctx, or nothing at all).  clp only tracks value_set and required.
  * They are SET-only, show <value> in --help and take no checker — the
  * transform does its own validation.
  */
@@ -207,9 +220,11 @@
 #define clp_new_operand_kv_checked(out, name, desc, dest, required, checker, err)                                                                                                                      \
     clp_new_operand_raw(out, name, desc, CLP_EXPECT(DUnorderedMap *, dest), OPERAND_ACT_KV, TYPE_STR, required, checker, NULL, err)
 
-#define clp_new_option_transform(out, ln, sn, desc, transform, required, global, err) clp_new_option_raw(out, ln, sn, desc, NULL, OPT_ACT_SET, TYPE_CUSTOM, required, global, NULL, transform, err)
+#define clp_new_option_transform(out, ln, sn, desc, transform, ctx, required, global, err)                                                                                                            \
+    clp_new_option_raw(out, ln, sn, desc, (void *) (ctx), OPT_ACT_SET, TYPE_CUSTOM, required, global, NULL, transform, err)
 
-#define clp_new_operand_transform(out, name, desc, transform, required, err) clp_new_operand_raw(out, name, desc, NULL, OPERAND_ACT_SET, TYPE_CUSTOM, required, NULL, transform, err)
+#define clp_new_operand_transform(out, name, desc, transform, ctx, required, err)                                                                                                                     \
+    clp_new_operand_raw(out, name, desc, (void *) (ctx), OPERAND_ACT_SET, TYPE_CUSTOM, required, NULL, transform, err)
 
 typedef enum Type
 {
@@ -219,7 +234,7 @@ typedef enum Type
     TYPE_STR,
     TYPE_CHAR,
     TYPE_DOUBLE,
-    TYPE_CUSTOM, /* handled by a ClpTransform; no dest, shown as <value> */
+    TYPE_CUSTOM, /* handled by a ClpTransform; dest is its ctx, shown as <value> */
 } Type;
 
 typedef enum OptAction
@@ -271,18 +286,21 @@ typedef const char *(*ClpChecker)(const void *value);
 
 /* User parser for TYPE_CUSTOM options/operands (the _transform macros).
  * arg is the raw command-line argument, NUL-terminated, pointing into argv.
- * The transform decides what to do with it: parse it, store the result
- * wherever it wants, or ignore it.  clp passes nothing else and stores nothing.
+ * ctx is the pointer given at registration, passed through untouched (it may
+ * be NULL); typically where the parsed result goes, so one transform can be
+ * shared by several options.
+ * The transform decides what to do with arg: parse it, store the result
+ * through ctx (or anywhere else), or ignore it.  clp stores nothing.
  * Return NULL to accept, or a message with static lifetime to reject
  * (parse fails with CLP_ERR_BAD_VALUE and value_set stays false).
  * Anything the transform stored before rejecting is its own responsibility. */
-typedef const char *(*ClpTransform)(const char *arg);
+typedef const char *(*ClpTransform)(const char *arg, void *ctx);
 
 typedef struct Operand
 {
     DStringView   name;
     char         *description;
-    void         *dest;      /* caller-owned; NULL for TYPE_CUSTOM */
+    void         *dest;      /* caller-owned; for TYPE_CUSTOM the transform's ctx */
     ClpChecker    checker;   /* NULL when unchecked */
     ClpTransform  transform; /* set only for TYPE_CUSTOM */
     OperandAction action;
@@ -295,7 +313,7 @@ typedef struct Option
 {
     DStringView  long_name;
     char        *description;
-    void        *dest;      /* caller-owned; NULL for TYPE_CUSTOM */
+    void        *dest;      /* caller-owned; for TYPE_CUSTOM the transform's ctx */
     ClpChecker   checker;   /* NULL when unchecked */
     ClpTransform transform; /* set only for TYPE_CUSTOM */
     OptAction    action;
@@ -429,7 +447,8 @@ ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, Cl
  *   dest              — caller-owned variable the parsed value is written to;
  *                       its type must match action and type (see VALUE TYPES
  *                       and OPTION ACTIONS).  Its initial content is the
- *                       default.  Must outlive parsing; NULL only for TYPE_CUSTOM.
+ *                       default.  Must outlive parsing.  For TYPE_CUSTOM it is
+ *                       the transform's ctx instead, and may be NULL.
  *   action            — OPT_ACT_SET | OPT_ACT_COUNT | OPT_ACT_LIST | OPT_ACT_KV.
  *   type              — value type; OPT_ACT_COUNT requires TYPE_USIZE.
  *   required          — if true, clp_parse_args exits when the option is absent.
@@ -441,7 +460,7 @@ ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, Cl
  *   transform         — ClpTransform handed the raw argument instead of the
  *                       built-in conversion.  Required with TYPE_CUSTOM and
  *                       only allowed with it; then action must be OPT_ACT_SET,
- *                       checker must be NULL and dest is ignored (may be NULL).
+ *                       checker must be NULL and dest is passed to it as ctx.
  *                       NULL for every other type.
  *
  * Nothing checks that dest matches type here: prefer the macros, which do.
@@ -466,7 +485,8 @@ ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, ch
  *   dest              — caller-owned variable the parsed value is written to;
  *                       its type must match action and type (see VALUE TYPES
  *                       and OPERAND ACTIONS).  Its initial content is the
- *                       default.  Must outlive parsing; NULL only for TYPE_CUSTOM.
+ *                       default.  Must outlive parsing.  For TYPE_CUSTOM it is
+ *                       the transform's ctx instead, and may be NULL.
  *   action            — OPERAND_ACT_SET | OPERAND_ACT_LIST | OPERAND_ACT_KV.
  *   type              — value type.
  *   required          — if true, clp_parse_args exits when the operand is absent.
@@ -566,6 +586,23 @@ void clp_free_option(Option *option);
  * Passing NULL is a no-op, like free().
  */
 void clp_free_operand(Operand *operand);
+
+/* Create an empty LIST collection with the element type the parser expects
+ * (DStringView).  Release it with clp_list_destroy.  list must not be NULL.
+ * Returns CLP_OK or CLP_ERR_ALLOC.
+ */
+ClpStatus clp_list_init(DDynArray *list, ClpError *err);
+
+/* Create an empty KV collection with the key/value types the parser expects
+ * (DStringView → DStringView, keys not owned).  Release it with
+ * clp_kv_destroy.  map must not be NULL.  Returns CLP_OK or CLP_ERR_ALLOC.
+ */
+ClpStatus clp_kv_init(DUnorderedMap *map, ClpError *err);
+
+/* Release a collection created by clp_list_init / clp_kv_init.  The
+ * DStringViews it held point into argv, which is not touched. */
+void clp_list_destroy(DDynArray *list);
+void clp_kv_destroy(DUnorderedMap *map);
 
 /* Recursively release all resources allocated inside the command tree:
  * root, every subcommand, and every option and operand added to them.

@@ -2,6 +2,7 @@
 
 #include "converter.h"
 #include "d_general_lib.h"
+#include "d_unordered_map.h"
 #include "error.h"
 #include "free.h"
 #include "parse.h"
@@ -290,6 +291,32 @@ void clp_parse_args(Command *root, char **argv, Command **command)
         exit(EXIT_SUCCESS);
     clp_print_error(stderr, &err);
     exit(EXIT_FAILURE);
+}
+
+ClpStatus clp_list_init(DDynArray *list, ClpError *err)
+{
+    assert(list != NULL);
+    if (d_dyn_array_init(list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
+        return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
+    return CLP_OK;
+}
+
+ClpStatus clp_kv_init(DUnorderedMap *map, ClpError *err)
+{
+    assert(map != NULL);
+    if (d_unordered_map_init_not_owned_d_string_view_key(map, sizeof(DStringView), 1, NULL) != D_OK)
+        return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
+    return CLP_OK;
+}
+
+void clp_list_destroy(DDynArray *list)
+{
+    d_dyn_array_destroy(list);
+}
+
+void clp_kv_destroy(DUnorderedMap *map)
+{
+    d_unordered_map_destroy(map);
 }
 
 void clp_free_option(Option *option)
