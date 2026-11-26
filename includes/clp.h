@@ -24,27 +24,51 @@
  *
  * OPTION ACTIONS
  * --------------
- * OPT_ACT_SET   — stores a single typed value; requires an argument unless TYPE_BOOL.
- * OPT_ACT_COUNT — increments a usize counter each time the flag appears; no argument.
- * OPT_ACT_LIST  — collects comma-separated values into a DDynArray of DStringView.
- * OPT_ACT_KV    — collects key=value pairs (comma-separated) into a DUnorderedMap
- *                 (DStringView key → DStringView value).
+ * Every action writes into dest, a variable owned by the caller — except a
+ * TYPE_CUSTOM SET, which hands the argument to a ClpTransform (see TRANSFORMS).
+ *
+ * OPT_ACT_SET   — stores a single typed value in dest; requires an argument
+ *                 unless TYPE_BOOL (a bool flag sets *dest to true).
+ * OPT_ACT_COUNT — increments *dest (usize) each time the flag appears; no argument.
+ * OPT_ACT_LIST  — appends comma-separated values to dest, a DDynArray of DStringView.
+ * OPT_ACT_KV    — inserts key=value pairs (comma-separated) into dest, a
+ *                 DUnorderedMap (DStringView key → DStringView value).
  *
  * OPERAND ACTIONS
  * ---------------
- * OPERAND_ACT_SET  — stores a single typed value.
- * OPERAND_ACT_LIST — consumes all remaining positional arguments into a DDynArray.
- * OPERAND_ACT_KV   — parses one positional argument of comma-separated key=value pairs
- *                    into a DUnorderedMap.
+ * OPERAND_ACT_SET  — stores a single typed value in dest.
+ * OPERAND_ACT_LIST — appends all remaining positional arguments to dest (DDynArray).
+ * OPERAND_ACT_KV   — inserts one positional argument of comma-separated key=value
+ *                    pairs into dest (DUnorderedMap).
  *
- * VALUE TYPES
- * -----------
- * TYPE_BOOL   → value.value_bool         (bool)
- * TYPE_CHAR   → value.value_char         (char)
- * TYPE_STR    → value.value_d_string_view (DStringView; .data is the C string)
- * TYPE_LONG   → value.value_long         (long)
- * TYPE_USIZE  → value.value_usize        (usize)
- * TYPE_DOUBLE → value.value_double       (double)
+ * LIST and KV collections are not created by clp.  Initialise them before
+ * parsing, with exactly these element types, or parsing corrupts memory
+ * (KV users include "d_unordered_map.h" themselves; clp.h does not):
+ *   d_dyn_array_init(&list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE);
+ *   d_unordered_map_init_not_owned_d_string_view_key(&map, sizeof(DStringView), 1, NULL);
+ * Stored DStringViews point into argv and stay valid as long as argv does.
+ *
+ * VALUE TYPES (SET)
+ * -----------------
+ * TYPE_BOOL   → bool *
+ * TYPE_CHAR   → char *
+ * TYPE_STR    → DStringView * (.data points into argv, NUL-terminated)
+ * TYPE_LONG   → long *
+ * TYPE_USIZE  → usize *
+ * TYPE_DOUBLE → double *
+ * TYPE_CUSTOM → no dest; the raw argument goes to a ClpTransform
+ *
+ * The value in dest when parsing ends is the result: what was parsed if the
+ * option/operand was given, otherwise whatever the caller put there first
+ * (the default).  value_set tells the two apart.  A value rejected by its
+ * conversion or checker is never written to dest.
+ *
+ * TRANSFORMS
+ * ----------
+ * For arguments the built-in types cannot express (enums, hex patterns, ...),
+ * clp_new_option_transform / clp_new_operand_transform take a ClpTransform
+ * instead of a dest.  It receives the raw argument and does whatever it wants
+ * with it; clp only tracks value_set and required.  SET only, no checker.
  *
  * PARSING RULES
  * -------------
@@ -65,24 +89,40 @@
  *
  * QUICK START
  * -----------
- *   ClpError err;
- *   Command *root;
- *   Option  *verbose;
- *   Operand *file;
+ *   bool        verbose = false;          // default value
+ *   long        jobs    = 1;              // default value
+ *   DStringView file;
+ *   ClpError    err;
+ *   Command    *root;
+ *   Option     *verbose_opt, *jobs_opt;
+ *   Operand    *file_op;
  *   if (clp_new_command(&root, 0, "prog", "my program", &err) != CLP_OK ||
- *       clp_new_option(&verbose, "verbose", "v", "enable verbose output", TYPE_BOOL, false, false, &err) != CLP_OK ||
- *       clp_add_command_option(root, verbose, &err) != CLP_OK ||
- *       clp_new_operand(&file, "file", "input file", TYPE_STR, true, &err) != CLP_OK ||
- *       clp_add_command_operand(root, file, &err) != CLP_OK)
+ *       clp_new_option(&verbose_opt, "verbose", "v", "enable verbose output", &verbose, false, false, &err) != CLP_OK ||
+ *       clp_add_command_option(root, verbose_opt, &err) != CLP_OK ||
+ *       clp_new_option(&jobs_opt, "jobs", "j", "number of jobs", &jobs, false, false, &err) != CLP_OK ||
+ *       clp_add_command_option(root, jobs_opt, &err) != CLP_OK ||
+ *       clp_new_operand(&file_op, "file", "input file", &file, true, &err) != CLP_OK ||
+ *       clp_add_command_operand(root, file_op, &err) != CLP_OK)
  *   {
+ *       // an option/operand whose clp_add_* failed is still yours: clp_free_option / clp_free_operand
  *       clp_print_error(stderr, &err);
  *       return 1;
  *   }
  *   Command *cmd = NULL;
  *   clp_parse_args(root, argv, &cmd);
- *   if (verbose->value_set) { ... }
- *   printf("%s\n", file->value.value_d_string_view.data);
+ *   if (jobs_opt->value_set) { ... }   // given on the command line, not the default
+ *   printf("%s %ld %d\n", file.data, jobs, verbose);
  *   clp_cleanup(root);
+ *
+ * A transform option (no dest; the callback stores what it wants):
+ *   static Mode mode = MODE_FAST;
+ *   static const char *parse_mode(const char *arg)
+ *   {
+ *       if (strcmp(arg, "fast") == 0) { mode = MODE_FAST; return NULL; }
+ *       if (strcmp(arg, "safe") == 0) { mode = MODE_SAFE; return NULL; }
+ *       return "expected \"fast\" or \"safe\"";
+ *   }
+ *   clp_new_option_transform(&mode_opt, "mode", "m", "run mode", parse_mode, false, false, &err);
  *
  * ERROR HANDLING
  * --------------
@@ -103,109 +143,73 @@
 #include "d_dyn_array.h"
 #include "d_string_view.h"
 #include "d_types.h"
-#include "d_unordered_map.h"
-
 #include <stdio.h>
 
-#define clp_new_option(out, long_name, short_name, description, type, required, global, err)                                                                                                           \
-    clp_new_option_raw(out, long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global, NULL, err)
+/* CONSTRUCTOR MACROS
+ * ------------------
+ * Every value is written straight into a variable the caller owns (dest).
+ * clp never assigns a default: initialise dest before parsing and whatever is
+ * there when parsing ends is the value — the default if the option/operand was
+ * not given.  Option.value_set / Operand.value_set tell the two cases apart.
+ *
+ * For SET the value type is deduced from the dest pointer at compile time:
+ *   long *        → TYPE_LONG       bool *   → TYPE_BOOL
+ *   usize *       → TYPE_USIZE      char *   → TYPE_CHAR
+ *   DStringView * → TYPE_STR        double * → TYPE_DOUBLE
+ * Any other pointer type is a compile error.  COUNT takes a usize *, LIST a
+ * DDynArray * and KV a DUnorderedMap *; anything else is a compile error too.
+ * LIST and KV collections must be initialised by the caller (see OPTION
+ * ACTIONS) and destroyed by the caller after use.
+ *
+ * The _checked variants also take a ClpChecker (see ClpChecker).
+ *
+ * The _transform variants take no dest: the ClpTransform receives the raw
+ * argument and handles it however it wants (custom parsing, storing it
+ * anywhere, or nothing at all).  clp only tracks value_set and required.
+ * They are SET-only, show <value> in --help and take no checker — the
+ * transform does its own validation.
+ */
 
-#define clp_new_option_default_long(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob, NULL, err)
+/* Map a SET dest pointer to its Type at compile time; any other pointer type
+ * does not compile.  dest is not evaluated here. */
+#define CLP_TYPE_OF(dest) _Generic((dest), long *: TYPE_LONG, bool *: TYPE_BOOL, usize *: TYPE_USIZE, DStringView *: TYPE_STR, char *: TYPE_CHAR, double *: TYPE_DOUBLE)
 
-#define clp_new_option_default_bool(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob, NULL, err)
+/* Evaluate to dest when it has exactly type T, fail to compile otherwise. */
+#define CLP_EXPECT(T, dest) _Generic((dest), T: (dest))
 
-#define clp_new_option_default_usize(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob, NULL, err)
+#define clp_new_option(out, ln, sn, desc, dest, required, global, err) clp_new_option_raw(out, ln, sn, desc, dest, OPT_ACT_SET, CLP_TYPE_OF(dest), required, global, NULL, NULL, err)
 
-#define clp_new_option_default_str(out, ln, sn, desc, def, req, glob, err)                                                                                                                             \
-    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob, NULL, err)
+#define clp_new_option_count(out, ln, sn, desc, dest, global, err) clp_new_option_raw(out, ln, sn, desc, CLP_EXPECT(usize *, dest), OPT_ACT_COUNT, TYPE_USIZE, false, global, NULL, NULL, err)
 
-#define clp_new_option_default_char(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob, NULL, err)
+#define clp_new_option_list(out, ln, sn, desc, dest, required, global, err) clp_new_option_raw(out, ln, sn, desc, CLP_EXPECT(DDynArray *, dest), OPT_ACT_LIST, TYPE_STR, required, global, NULL, NULL, err)
 
-#define clp_new_option_default_double(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob, NULL, err)
+#define clp_new_option_kv(out, ln, sn, desc, dest, required, global, err) clp_new_option_raw(out, ln, sn, desc, CLP_EXPECT(DUnorderedMap *, dest), OPT_ACT_KV, TYPE_STR, required, global, NULL, NULL, err)
 
-#define clp_new_option_count(out, ln, sn, desc, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_COUNT, (Value) {0}, TYPE_USIZE, false, glob, NULL, err)
+#define clp_new_option_checked(out, ln, sn, desc, dest, required, global, checker, err) clp_new_option_raw(out, ln, sn, desc, dest, OPT_ACT_SET, CLP_TYPE_OF(dest), required, global, checker, NULL, err)
 
-#define clp_new_option_list(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob, NULL, err)
+#define clp_new_option_list_checked(out, ln, sn, desc, dest, required, global, checker, err)                                                                                                           \
+    clp_new_option_raw(out, ln, sn, desc, CLP_EXPECT(DDynArray *, dest), OPT_ACT_LIST, TYPE_STR, required, global, checker, NULL, err)
 
-#define clp_new_option_kv(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob, NULL, err)
+#define clp_new_option_kv_checked(out, ln, sn, desc, dest, required, global, checker, err)                                                                                                             \
+    clp_new_option_raw(out, ln, sn, desc, CLP_EXPECT(DUnorderedMap *, dest), OPT_ACT_KV, TYPE_STR, required, global, checker, NULL, err)
 
-#define clp_new_operand(out, name, description, type, required, err) clp_new_operand_raw(out, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required, NULL, err)
+#define clp_new_operand(out, name, desc, dest, required, err) clp_new_operand_raw(out, name, desc, dest, OPERAND_ACT_SET, CLP_TYPE_OF(dest), required, NULL, NULL, err)
 
-#define clp_new_operand_default_long(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, NULL, err)
+#define clp_new_operand_list(out, name, desc, dest, required, err) clp_new_operand_raw(out, name, desc, CLP_EXPECT(DDynArray *, dest), OPERAND_ACT_LIST, TYPE_STR, required, NULL, NULL, err)
 
-#define clp_new_operand_default_bool(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, NULL, err)
+#define clp_new_operand_kv(out, name, desc, dest, required, err) clp_new_operand_raw(out, name, desc, CLP_EXPECT(DUnorderedMap *, dest), OPERAND_ACT_KV, TYPE_STR, required, NULL, NULL, err)
 
-#define clp_new_operand_default_usize(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, NULL, err)
+#define clp_new_operand_checked(out, name, desc, dest, required, checker, err) clp_new_operand_raw(out, name, desc, dest, OPERAND_ACT_SET, CLP_TYPE_OF(dest), required, checker, NULL, err)
 
-#define clp_new_operand_default_str(out, name, desc, def, req, err)                                                                                                                                    \
-    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, NULL, err)
+#define clp_new_operand_list_checked(out, name, desc, dest, required, checker, err)                                                                                                                    \
+    clp_new_operand_raw(out, name, desc, CLP_EXPECT(DDynArray *, dest), OPERAND_ACT_LIST, TYPE_STR, required, checker, NULL, err)
 
-#define clp_new_operand_default_char(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, NULL, err)
+#define clp_new_operand_kv_checked(out, name, desc, dest, required, checker, err)                                                                                                                      \
+    clp_new_operand_raw(out, name, desc, CLP_EXPECT(DUnorderedMap *, dest), OPERAND_ACT_KV, TYPE_STR, required, checker, NULL, err)
 
-#define clp_new_operand_default_double(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, NULL, err)
+#define clp_new_option_transform(out, ln, sn, desc, transform, required, global, err) clp_new_option_raw(out, ln, sn, desc, NULL, OPT_ACT_SET, TYPE_CUSTOM, required, global, NULL, transform, err)
 
-#define clp_new_operand_list(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required, NULL, err)
-
-#define clp_new_operand_kv(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required, NULL, err)
-
-/* _checked variants: same as above plus a ClpChecker.
- * SET values are checked once parsed; LIST values are checked item by item
- * (each item as a value_d_string_view); KV values pair by pair (as
- * value_key_value).  count values and defaults are never checked. */
-
-#define clp_new_option_checked(out, long_name, short_name, description, type, required, global, checker, err)                                                                                   \
-    clp_new_option_raw(out, long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global, checker, err)
-
-#define clp_new_option_default_long_checked(out, ln, sn, desc, def, req, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob, checker, err)
-
-#define clp_new_option_default_bool_checked(out, ln, sn, desc, def, req, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob, checker, err)
-
-#define clp_new_option_default_usize_checked(out, ln, sn, desc, def, req, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob, checker, err)
-
-#define clp_new_option_default_str_checked(out, ln, sn, desc, def, req, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob, checker, err)
-
-#define clp_new_option_default_char_checked(out, ln, sn, desc, def, req, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob, checker, err)
-
-#define clp_new_option_default_double_checked(out, ln, sn, desc, def, req, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob, checker, err)
-
-#define clp_new_operand_checked(out, name, description, type, required, checker, err) \
-    clp_new_operand_raw(out, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required, checker, err)
-
-#define clp_new_operand_default_long_checked(out, name, desc, def, req, checker, err) \
-    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, checker, err)
-
-#define clp_new_operand_default_bool_checked(out, name, desc, def, req, checker, err) \
-    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, checker, err)
-
-#define clp_new_operand_default_usize_checked(out, name, desc, def, req, checker, err) \
-    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, checker, err)
-
-#define clp_new_operand_default_str_checked(out, name, desc, def, req, checker, err) \
-    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, checker, err)
-
-#define clp_new_operand_default_char_checked(out, name, desc, def, req, checker, err) \
-    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, checker, err)
-
-#define clp_new_operand_default_double_checked(out, name, desc, def, req, checker, err) \
-    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, checker, err)
-
-#define clp_new_option_list_checked(out, ln, sn, desc, required, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob, checker, err)
-
-#define clp_new_operand_list_checked(out, name, desc, required, checker, err) \
-    clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required, checker, err)
-
-#define clp_new_option_kv_checked(out, ln, sn, desc, required, glob, checker, err) \
-    clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob, checker, err)
-
-#define clp_new_operand_kv_checked(out, name, desc, required, checker, err) \
-    clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required, checker, err)
+#define clp_new_operand_transform(out, name, desc, transform, required, err) clp_new_operand_raw(out, name, desc, NULL, OPERAND_ACT_SET, TYPE_CUSTOM, required, NULL, transform, err)
 
 typedef enum Type
 {
@@ -215,6 +219,7 @@ typedef enum Type
     TYPE_STR,
     TYPE_CHAR,
     TYPE_DOUBLE,
+    TYPE_CUSTOM, /* handled by a ClpTransform; no dest, shown as <value> */
 } Type;
 
 typedef enum OptAction
@@ -232,62 +237,74 @@ typedef enum OperandAction
     OPERAND_ACT_KV
 } OperandAction;
 
-/* One key=value pair of a KV option/operand, as handed to a ClpChecker
- * through Value.value_key_value.  The pair itself is stored in value_kv;*/
+/* One key=value pair of a KV option/operand, as handed to a ClpChecker. */
 typedef struct ClpKeyValue
 {
     DStringView key;
     DStringView value;
 } ClpKeyValue;
 
+/* Scratch storage for one SET value while it is converted and checked;
+ * it is copied into dest only once accepted. */
 typedef union Value
 {
-    DUnorderedMap value_kv;
-    ClpKeyValue   value_key_value; /* checker input only: one KV pair, never stored */
-    DDynArray     value_list;
-    DStringView   value_d_string_view;
-    usize         value_usize;
-    double        value_double;
-    long          value_long;
-    bool          value_bool;
-    char          value_char;
+    DStringView value_d_string_view;
+    usize       value_usize;
+    double      value_double;
+    long        value_long;
+    bool        value_bool;
+    char        value_char;
 } Value;
 
-/* User validator run on a value once it has been parsed.
- * value is the converted value (for LIST: one item, as value_d_string_view;
- * for KV: one pair, as value_key_value, after the pair was checked for a
- * '=' and a non-empty key and value).
+/* User validator run on a value once it has been converted.
+ * value points to:
+ *   SET  — the converted value, with the same type as dest (e.g. const long *
+ *          for a long dest).  It is not dest itself: dest is only written once
+ *          the checker accepts, so a rejected value never overwrites it.
+ *   LIST — one item, as a const DStringView *.
+ *   KV   — one pair, as a const ClpKeyValue *, after the pair was checked for
+ *          a '=' and a non-empty key and value.
+ * Never run for bool flags or COUNT.
  * Return NULL to accept, or a message with static lifetime to reject
  * (parse fails with CLP_ERR_BAD_VALUE). */
-typedef const char *(*ClpChecker)(const Value *value);
+typedef const char *(*ClpChecker)(const void *value);
+
+/* User parser for TYPE_CUSTOM options/operands (the _transform macros).
+ * arg is the raw command-line argument, NUL-terminated, pointing into argv.
+ * The transform decides what to do with it: parse it, store the result
+ * wherever it wants, or ignore it.  clp passes nothing else and stores nothing.
+ * Return NULL to accept, or a message with static lifetime to reject
+ * (parse fails with CLP_ERR_BAD_VALUE and value_set stays false).
+ * Anything the transform stored before rejecting is its own responsibility. */
+typedef const char *(*ClpTransform)(const char *arg);
 
 typedef struct Operand
 {
-    Value         value;
     DStringView   name;
     char         *description;
-    ClpChecker    checker;
+    void         *dest;      /* caller-owned; NULL for TYPE_CUSTOM */
+    ClpChecker    checker;   /* NULL when unchecked */
+    ClpTransform  transform; /* set only for TYPE_CUSTOM */
     OperandAction action;
     Type          type;
     bool          required;
-    bool          has_default_value;
-    bool          value_set;
+    bool          value_set; /* read-only: true once a value was accepted */
 } Operand;
 
 typedef struct Option
 {
-    Value       value;
-    DStringView long_name;
-    char       *description;
-    ClpChecker  checker;
-    OptAction   action;
-    Type        type;
-    char        short_name;
-    bool        required;
-    bool        has_default_value;
-    bool        value_set;
-    bool        global;
-    bool        has_args;
+    DStringView  long_name;
+    char        *description;
+    void        *dest;      /* caller-owned; NULL for TYPE_CUSTOM */
+    ClpChecker   checker;   /* NULL when unchecked */
+    ClpTransform transform; /* set only for TYPE_CUSTOM */
+    OptAction    action;
+    Type         type;
+    char         short_name;
+    bool         required;
+    bool         global;
+    bool         has_args;
+    bool         value_set; /* read-only: true once the option was given and accepted */
 } Option;
 
 typedef enum ClpStatus
@@ -299,13 +316,13 @@ typedef enum ClpStatus
     CLP_ERR_UNKNOWN_OPTION,    /* option not registered on the command */
     CLP_ERR_MISSING_ARG,       /* option requires an argument and none was given */
     CLP_ERR_UNEXPECTED_ARG,    /* "--flag=value" on an option that takes no argument */
-    CLP_ERR_BAD_VALUE,         /* value could not be converted to the option/operand type */
+    CLP_ERR_BAD_VALUE,         /* value could not be converted to its type, or was rejected by a checker or transform */
     CLP_ERR_BAD_KV,            /* malformed key=value pair */
     CLP_ERR_TOO_MANY_OPERANDS, /* more positional arguments than registered operands */
     CLP_ERR_MISSING_REQUIRED,  /* one or more required options/operands were not provided */
     CLP_ERR_DUPLICATE,         /* option registered twice on the same command (same long or short name) */
     CLP_ERR_RESERVED_NAME,     /* option uses a reserved name (e.g. "help") */
-    CLP_ERR_INVALID_TYPE,      /* action/type combination not allowed (e.g. count action on a non-usize type) */
+    CLP_ERR_INVALID_TYPE,      /* action/type/checker/transform combination not allowed (e.g. count on a non-usize type, transform without TYPE_CUSTOM) */
     CLP_ERR_CONFLICT,          /* command would have both operands and subcommands */
     CLP_ERR_OPERAND_ORDER,     /* required operand registered after an optional one */
 } ClpStatus;
@@ -409,26 +426,33 @@ ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, Cl
  *   short_name        — single-character string (e.g. "v"), or NULL for a
  *                       long-only option.  Must be alphanumeric [a-z A-Z 0-9] or '?'.
  *   description       — help text; NULL is accepted.
- *   has_default_value — pass true when value carries a pre-filled default.
- *                       Pass false for LIST/KV so the library allocates the
- *                       internal collection.
+ *   dest              — caller-owned variable the parsed value is written to;
+ *                       its type must match action and type (see VALUE TYPES
+ *                       and OPTION ACTIONS).  Its initial content is the
+ *                       default.  Must outlive parsing; NULL only for TYPE_CUSTOM.
  *   action            — OPT_ACT_SET | OPT_ACT_COUNT | OPT_ACT_LIST | OPT_ACT_KV.
- *   value             — initial/default Value; ignored for LIST and KV when
- *                       has_default_value is false.
  *   type              — value type; OPT_ACT_COUNT requires TYPE_USIZE.
  *   required          — if true, clp_parse_args exits when the option is absent.
  *   global            — if true, the option is visible in all descendant commands.
  *   checker           — optional ClpChecker run on each parsed value (SET) or
  *                       list item (LIST) or key=value pair (KV); never run
- *                       on defaults or count.
+ *                       on bool flags or count.
  *                       NULL disables the check.
+ *   transform         — ClpTransform handed the raw argument instead of the
+ *                       built-in conversion.  Required with TYPE_CUSTOM and
+ *                       only allowed with it; then action must be OPT_ACT_SET,
+ *                       checker must be NULL and dest is ignored (may be NULL).
+ *                       NULL for every other type.
  *
- * out must not be NULL; at least one of long_name or short_name must not be NULL.
+ * Nothing checks that dest matches type here: prefer the macros, which do.
+ * out must not be NULL, nor dest unless type is TYPE_CUSTOM; at least one of
+ * long_name or short_name must not be NULL.
  * Returns CLP_OK, CLP_ERR_INVALID_NAME, CLP_ERR_RESERVED_NAME, CLP_ERR_INVALID_TYPE
- * (OPT_ACT_COUNT paired with a type other than TYPE_USIZE), or CLP_ERR_ALLOC.
+ * (OPT_ACT_COUNT paired with a type other than TYPE_USIZE, or a transform /
+ * TYPE_CUSTOM combination not allowed above), or CLP_ERR_ALLOC.
  */
-ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global,
-                             ClpChecker checker, ClpError *err);
+ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description, void *dest, OptAction action, Type type, bool required, bool global, ClpChecker checker,
+                             ClpTransform transform, ClpError *err);
 
 /* Low-level operand allocator — prefer the clp_new_operand* macros.
  *
@@ -439,23 +463,26 @@ ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, ch
  *   name              — operand name shown in usage and --help (e.g. "file").
  *                       Must not be NULL or empty.
  *   description       — help text; NULL is accepted.
- *   has_default_value — pass true when value carries a pre-filled default.
- *                       Pass false for LIST/KV so the library allocates the
- *                       internal collection.
+ *   dest              — caller-owned variable the parsed value is written to;
+ *                       its type must match action and type (see VALUE TYPES
+ *                       and OPERAND ACTIONS).  Its initial content is the
+ *                       default.  Must outlive parsing; NULL only for TYPE_CUSTOM.
  *   action            — OPERAND_ACT_SET | OPERAND_ACT_LIST | OPERAND_ACT_KV.
- *   value             — initial/default Value; ignored for LIST and KV when
- *                       has_default_value is false.
  *   type              — value type.
  *   required          — if true, clp_parse_args exits when the operand is absent.
  *   checker           — optional ClpChecker run on each parsed value (SET) or
- *                       list item (LIST) or key=value pair (KV); never run
- *                       on defaults or count.
+ *                       list item (LIST) or key=value pair (KV).
  *                       NULL disables the check.
+ *   transform         — same rules as for clp_new_option_raw, with
+ *                       OPERAND_ACT_SET as the only allowed action.
  *
- * out and name must not be NULL.
- * Returns CLP_OK, CLP_ERR_INVALID_NAME on an empty or invalid name, or CLP_ERR_ALLOC.
+ * Nothing checks that dest matches type here: prefer the macros, which do.
+ * out and name must not be NULL, nor dest unless type is TYPE_CUSTOM.
+ * Returns CLP_OK, CLP_ERR_INVALID_NAME on an empty or invalid name,
+ * CLP_ERR_INVALID_TYPE on a transform / TYPE_CUSTOM combination not allowed,
+ * or CLP_ERR_ALLOC.
  */
-ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required, ClpChecker checker,
+ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, void *dest, OperandAction action, Type type, bool required, ClpChecker checker, ClpTransform transform,
                               ClpError *err);
 
 /* Parse argv against the command tree rooted at root.
@@ -486,8 +513,10 @@ void clp_parse_args(Command *root, char **argv, Command **command);
  * *err is filled with the code, command and a formatted message (print it with
  * clp_print_error).  err may be NULL if the caller only needs the status.
  *
- * On failure, options/operands parsed before the error keep the values they
- * received; *command may already point to a dispatched subcommand.
+ * On failure, dests written before the error keep the values they received
+ * (for LIST/KV, so do the items accepted before the bad one) and transforms
+ * that already accepted an argument are not undone; the rejected value itself
+ * is never written.  *command may already point to a dispatched subcommand.
  *
  * root, argv, *argv, and command must not be NULL.
  */
@@ -514,8 +543,8 @@ Option *clp_get_option_by_long(Command *command, DStringView lng);
  */
 Operand *clp_get_operand(Command *command, DStringView operand_name);
 
-/* Release an Option that is not attached to any command, including its
- * internal collection (LIST / KV actions).
+/* Release an Option that is not attached to any command.  Its dest is
+ * the caller's and is left untouched.
  *
  * Use it only for options the caller still owns: one that was never passed to
  * clp_add_command_option, or one whose clp_add_command_option call failed.
@@ -526,8 +555,8 @@ Operand *clp_get_operand(Command *command, DStringView operand_name);
  */
 void clp_free_option(Option *option);
 
-/* Release an Operand that is not attached to any command, including its
- * internal collection (LIST / KV actions).
+/* Release an Operand that is not attached to any command.  Its dest is
+ * the caller's and is left untouched.
  *
  * Use it only for operands the caller still owns: one that was never passed to
  * clp_add_command_operand, or one whose clp_add_command_operand call failed.

@@ -1,5 +1,7 @@
 #include "converter.h"
 
+#include "d_general_lib.h"
+
 #include <errno.h>
 #define TRUE_STR "true"
 #define FALSE_STR "false"
@@ -88,6 +90,8 @@ const char *type_to_str(Type type)
         return "char";
     case TYPE_DOUBLE:
         return "double";
+    case TYPE_CUSTOM:
+        return "value";
     default:
         break;
     }

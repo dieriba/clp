@@ -8,14 +8,7 @@
 
 void free_option(Option *option)
 {
-    if (option)
-    {
-        if (option->action == OPT_ACT_KV)
-            d_unordered_map_destroy(&option->value.value_kv);
-        else if (option->action == OPT_ACT_LIST)
-            d_dyn_array_destroy(&option->value.value_list);
-        free(option);
-    }
+    free(option);
 }
 
 static void free_command_options(Command *root)
@@ -31,14 +24,7 @@ static void free_command_options(Command *root)
 
 void free_operand(Operand *operand)
 {
-    if (operand)
-    {
-        if (operand->action == OPERAND_ACT_KV)
-            d_unordered_map_destroy(&operand->value.value_kv);
-        else if (operand->action == OPERAND_ACT_LIST)
-            d_dyn_array_destroy(&operand->value.value_list);
-        free(operand);
-    }
+    free(operand);
 }
 
 static void free_command_operands(Command *root)

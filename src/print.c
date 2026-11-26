@@ -1,6 +1,7 @@
 #include "print.h"
 
 #include "converter.h"
+#include "d_general_lib.h"
 #include "error.h"
 #include "shared.h"
 

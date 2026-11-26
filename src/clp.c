@@ -2,7 +2,6 @@
 
 #include "converter.h"
 #include "d_general_lib.h"
-#include "d_unordered_map.h"
 #include "error.h"
 #include "free.h"
 #include "parse.h"
@@ -48,11 +47,25 @@ ClpStatus clp_new_command(Command **out, int code, char *name, char *description
     return CLP_OK;
 }
 
-ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global,
-                             ClpChecker checker, ClpError *err)
+static const char *check_transform_combination(Type type, bool is_set, ClpChecker checker, ClpTransform transform)
+{
+    if (transform != NULL && type != TYPE_CUSTOM)
+        return "a transform requires type 'custom'";
+    if (transform == NULL && type == TYPE_CUSTOM)
+        return "type 'custom' requires a transform";
+    if (transform != NULL && is_set == false)
+        return "a transform is only allowed with the 'set' action";
+    if (transform != NULL && checker != NULL)
+        return "a transform cannot be combined with a checker";
+    return NULL;
+}
+
+ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description, void *dest, OptAction action, Type type, bool required, bool global, ClpChecker checker,
+                             ClpTransform transform, ClpError *err)
 {
     assert(out != NULL);
     assert(long_name != NULL || short_name != NULL);
+    assert(dest != NULL || type == TYPE_CUSTOM);
 
     *out           = NULL;
     char shrt_name = FLAG_SHORT_OPT_NOT_SET;
@@ -81,86 +94,62 @@ ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, ch
                           type_to_str(type));
     }
 
+    const char *bad_combination = check_transform_combination(type, action == OPT_ACT_SET, checker, transform);
+    if (bad_combination)
+    {
+        if (long_name)
+            return error_fail(err, CLP_ERR_INVALID_TYPE, NULL, "option '--%s': %s\n", long_name, bad_combination);
+        return error_fail(err, CLP_ERR_INVALID_TYPE, NULL, "option '-%c': %s\n", shrt_name, bad_combination);
+    }
+
     Option *opt = malloc(sizeof(Option));
     if (opt == NULL)
         return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
 
-    if (has_default_value == false && action == OPT_ACT_LIST)
-    {
-        if (d_dyn_array_init(&opt->value.value_list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
-        {
-            free(opt);
-            return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
-        }
-    }
-    else if (has_default_value == false && action == OPT_ACT_KV)
-    {
-        if (d_unordered_map_init_not_owned_d_string_view_key(&opt->value.value_kv, sizeof(DStringView), 1, NULL))
-        {
-            free(opt);
-            return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
-        }
-    }
-    else
-        opt->value = value;
-
-    opt->long_name         = d_string_view_from_c_string(long_name);
-    opt->value_set         = false;
-    opt->action            = action;
-    opt->short_name        = shrt_name;
-    opt->description       = description == NULL ? NO_DESC : description;
-    opt->has_default_value = has_default_value;
-    opt->type              = type;
-    opt->required          = required;
-    opt->global            = global;
-    opt->checker           = checker;
-    opt->has_args          = !(type == TYPE_BOOL || action == OPT_ACT_COUNT);
-    *out                   = opt;
+    opt->long_name   = d_string_view_from_c_string(long_name);
+    opt->action      = action;
+    opt->short_name  = shrt_name;
+    opt->description = description == NULL ? NO_DESC : description;
+    opt->type        = type;
+    opt->required    = required;
+    opt->global      = global;
+    opt->dest        = dest;
+    opt->checker     = checker;
+    opt->transform   = transform;
+    opt->value_set   = false;
+    opt->has_args    = !(type == TYPE_BOOL || action == OPT_ACT_COUNT);
+    *out             = opt;
     return CLP_OK;
 }
 
-ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required, ClpChecker checker,
-                              ClpError *err)
+ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, void *dest, OperandAction action, Type type, bool required, ClpChecker checker, ClpTransform transform, ClpError *err)
 {
     assert(out != NULL);
     assert(name != NULL);
+    assert(dest != NULL || type == TYPE_CUSTOM);
 
     *out = NULL;
     if (is_valid_long(d_string_view_from_c_string(name)) == false)
         return error_fail(err, CLP_ERR_INVALID_NAME, NULL, "'--%s' is not a valid option name\n" LONG_NAME_RULE, name);
 
+    const char *bad_combination = check_transform_combination(type, action == OPERAND_ACT_SET, checker, transform);
+    if (bad_combination)
+        return error_fail(err, CLP_ERR_INVALID_TYPE, NULL, "operand '<%s>': %s\n", name, bad_combination);
+
     Operand *operand = malloc(sizeof(Operand));
     if (operand == NULL)
         return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
 
-    if (has_default_value == false && action == OPERAND_ACT_LIST)
-    {
-        if (d_dyn_array_init(&operand->value.value_list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
-        {
-            free(operand);
-            return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
-        }
-    }
-    else if (has_default_value == false && action == OPERAND_ACT_KV)
-    {
-        if (d_unordered_map_init_not_owned_d_string_view_key(&operand->value.value_kv, sizeof(DStringView), 1, NULL))
-        {
-            free(operand);
-            return error_fail(err, CLP_ERR_ALLOC, NULL, "out of memory\n");
-        }
-    }
-    else
-        operand->value = value;
-
-    operand->name              = d_string_view_from_c_string(name);
-    operand->value_set         = false;
-    operand->action            = action;
-    operand->description       = description == NULL ? NO_DESC : description;
-    operand->has_default_value = has_default_value;
-    operand->type              = type;
-    operand->required          = required;
-    operand->checker           = checker;
-    *out                       = operand;
+    operand->name        = d_string_view_from_c_string(name);
+    operand->action      = action;
+    operand->description = description == NULL ? NO_DESC : description;
+    operand->type        = type;
+    operand->dest        = dest;
+    operand->required    = required;
+    operand->checker     = checker;
+    operand->transform   = transform;
+    operand->value_set   = false;
+    *out                 = operand;
     return CLP_OK;
 }
 
