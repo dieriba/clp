@@ -27,13 +27,15 @@
  * OPT_ACT_SET   — stores a single typed value; requires an argument unless TYPE_BOOL.
  * OPT_ACT_COUNT — increments a usize counter each time the flag appears; no argument.
  * OPT_ACT_LIST  — collects comma-separated values into a DDynArray of DStringView.
- * OPT_ACT_KV    — collects key=value pairs (comma-separated) into a DUnorderedMap.
+ * OPT_ACT_KV    — collects key=value pairs (comma-separated) into a DUnorderedMap
+ *                 (DStringView key → DStringView value).
  *
  * OPERAND ACTIONS
  * ---------------
  * OPERAND_ACT_SET  — stores a single typed value.
  * OPERAND_ACT_LIST — consumes all remaining positional arguments into a DDynArray.
- * OPERAND_ACT_KV   — parses a single key=value positional argument into a DUnorderedMap.
+ * OPERAND_ACT_KV   — parses one positional argument of comma-separated key=value pairs
+ *                    into a DUnorderedMap.
  *
  * VALUE TYPES
  * -----------
@@ -105,43 +107,105 @@
 
 #include <stdio.h>
 
-#define clp_new_option(out, long_name, short_name, description, type, required, global, err) clp_new_option_raw(out, long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global, err)
+#define clp_new_option(out, long_name, short_name, description, type, required, global, err)                                                                                                           \
+    clp_new_option_raw(out, long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global, NULL, err)
 
-#define clp_new_option_default_long(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob, err)
+#define clp_new_option_default_long(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob, NULL, err)
 
-#define clp_new_option_default_bool(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob, err)
+#define clp_new_option_default_bool(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob, NULL, err)
 
-#define clp_new_option_default_usize(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob, err)
+#define clp_new_option_default_usize(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob, NULL, err)
 
-#define clp_new_option_default_str(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob, err)
+#define clp_new_option_default_str(out, ln, sn, desc, def, req, glob, err)                                                                                                                             \
+    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob, NULL, err)
 
-#define clp_new_option_default_char(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob, err)
+#define clp_new_option_default_char(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob, NULL, err)
 
-#define clp_new_option_default_double(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob, err)
+#define clp_new_option_default_double(out, ln, sn, desc, def, req, glob, err) clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob, NULL, err)
 
-#define clp_new_option_count(out, ln, sn, desc, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_COUNT, (Value) {0}, TYPE_USIZE, false, glob, err)
+#define clp_new_option_count(out, ln, sn, desc, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_COUNT, (Value) {0}, TYPE_USIZE, false, glob, NULL, err)
 
-#define clp_new_option_list(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob, err)
+#define clp_new_option_list(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob, NULL, err)
 
-#define clp_new_option_kv(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob, err)
+#define clp_new_option_kv(out, ln, sn, desc, required, glob, err) clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob, NULL, err)
 
-#define clp_new_operand(out, name, description, type, required, err) clp_new_operand_raw(out, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required, err)
+#define clp_new_operand(out, name, description, type, required, err) clp_new_operand_raw(out, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required, NULL, err)
 
-#define clp_new_operand_default_long(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, err)
+#define clp_new_operand_default_long(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, NULL, err)
 
-#define clp_new_operand_default_bool(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, err)
+#define clp_new_operand_default_bool(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, NULL, err)
 
-#define clp_new_operand_default_usize(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, err)
+#define clp_new_operand_default_usize(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, NULL, err)
 
-#define clp_new_operand_default_str(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, err)
+#define clp_new_operand_default_str(out, name, desc, def, req, err)                                                                                                                                    \
+    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, NULL, err)
 
-#define clp_new_operand_default_char(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, err)
+#define clp_new_operand_default_char(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, NULL, err)
 
-#define clp_new_operand_default_double(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, err)
+#define clp_new_operand_default_double(out, name, desc, def, req, err) clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, NULL, err)
 
-#define clp_new_operand_list(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required, err)
+#define clp_new_operand_list(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required, NULL, err)
 
-#define clp_new_operand_kv(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required, err)
+#define clp_new_operand_kv(out, name, desc, required, err) clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required, NULL, err)
+
+/* _checked variants: same as above plus a ClpChecker.
+ * SET values are checked once parsed; LIST values are checked item by item
+ * (each item as a value_d_string_view); KV values pair by pair (as
+ * value_key_value).  count values and defaults are never checked. */
+
+#define clp_new_option_checked(out, long_name, short_name, description, type, required, global, checker, err)                                                                                   \
+    clp_new_option_raw(out, long_name, short_name, description, false, OPT_ACT_SET, (Value) {0}, type, required, global, checker, err)
+
+#define clp_new_option_default_long_checked(out, ln, sn, desc, def, req, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, glob, checker, err)
+
+#define clp_new_option_default_bool_checked(out, ln, sn, desc, def, req, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, glob, checker, err)
+
+#define clp_new_option_default_usize_checked(out, ln, sn, desc, def, req, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob, checker, err)
+
+#define clp_new_option_default_str_checked(out, ln, sn, desc, def, req, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob, checker, err)
+
+#define clp_new_option_default_char_checked(out, ln, sn, desc, def, req, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, glob, checker, err)
+
+#define clp_new_option_default_double_checked(out, ln, sn, desc, def, req, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, glob, checker, err)
+
+#define clp_new_operand_checked(out, name, description, type, required, checker, err) \
+    clp_new_operand_raw(out, name, description, false, OPERAND_ACT_SET, (Value) {0}, type, required, checker, err)
+
+#define clp_new_operand_default_long_checked(out, name, desc, def, req, checker, err) \
+    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, checker, err)
+
+#define clp_new_operand_default_bool_checked(out, name, desc, def, req, checker, err) \
+    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_bool = (def)}, TYPE_BOOL, req, checker, err)
+
+#define clp_new_operand_default_usize_checked(out, name, desc, def, req, checker, err) \
+    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, checker, err)
+
+#define clp_new_operand_default_str_checked(out, name, desc, def, req, checker, err) \
+    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, checker, err)
+
+#define clp_new_operand_default_char_checked(out, name, desc, def, req, checker, err) \
+    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_char = (def)}, TYPE_CHAR, req, checker, err)
+
+#define clp_new_operand_default_double_checked(out, name, desc, def, req, checker, err) \
+    clp_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_double = (def)}, TYPE_DOUBLE, req, checker, err)
+
+#define clp_new_option_list_checked(out, ln, sn, desc, required, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, required, glob, checker, err)
+
+#define clp_new_operand_list_checked(out, name, desc, required, checker, err) \
+    clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, required, checker, err)
+
+#define clp_new_option_kv_checked(out, ln, sn, desc, required, glob, checker, err) \
+    clp_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, required, glob, checker, err)
+
+#define clp_new_operand_kv_checked(out, name, desc, required, checker, err) \
+    clp_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, required, checker, err)
 
 typedef enum Type
 {
@@ -168,9 +232,18 @@ typedef enum OperandAction
     OPERAND_ACT_KV
 } OperandAction;
 
+/* One key=value pair of a KV option/operand, as handed to a ClpChecker
+ * through Value.value_key_value.  The pair itself is stored in value_kv;*/
+typedef struct ClpKeyValue
+{
+    DStringView key;
+    DStringView value;
+} ClpKeyValue;
+
 typedef union Value
 {
     DUnorderedMap value_kv;
+    ClpKeyValue   value_key_value; /* checker input only: one KV pair, never stored */
     DDynArray     value_list;
     DStringView   value_d_string_view;
     usize         value_usize;
@@ -180,11 +253,20 @@ typedef union Value
     char          value_char;
 } Value;
 
+/* User validator run on a value once it has been parsed.
+ * value is the converted value (for LIST: one item, as value_d_string_view;
+ * for KV: one pair, as value_key_value, after the pair was checked for a
+ * '=' and a non-empty key and value).
+ * Return NULL to accept, or a message with static lifetime to reject
+ * (parse fails with CLP_ERR_BAD_VALUE). */
+typedef const char *(*ClpChecker)(const Value *value);
+
 typedef struct Operand
 {
     Value         value;
     DStringView   name;
     char         *description;
+    ClpChecker    checker;
     OperandAction action;
     Type          type;
     bool          required;
@@ -197,6 +279,7 @@ typedef struct Option
     Value       value;
     DStringView long_name;
     char       *description;
+    ClpChecker  checker;
     OptAction   action;
     Type        type;
     char        short_name;
@@ -335,13 +418,17 @@ ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, Cl
  *   type              — value type; OPT_ACT_COUNT requires TYPE_USIZE.
  *   required          — if true, clp_parse_args exits when the option is absent.
  *   global            — if true, the option is visible in all descendant commands.
+ *   checker           — optional ClpChecker run on each parsed value (SET) or
+ *                       list item (LIST) or key=value pair (KV); never run
+ *                       on defaults or count.
+ *                       NULL disables the check.
  *
  * out must not be NULL; at least one of long_name or short_name must not be NULL.
  * Returns CLP_OK, CLP_ERR_INVALID_NAME, CLP_ERR_RESERVED_NAME, CLP_ERR_INVALID_TYPE
  * (OPT_ACT_COUNT paired with a type other than TYPE_USIZE), or CLP_ERR_ALLOC.
  */
 ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global,
-                             ClpError *err);
+                             ClpChecker checker, ClpError *err);
 
 /* Low-level operand allocator — prefer the clp_new_operand* macros.
  *
@@ -360,11 +447,16 @@ ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, ch
  *                       has_default_value is false.
  *   type              — value type.
  *   required          — if true, clp_parse_args exits when the operand is absent.
+ *   checker           — optional ClpChecker run on each parsed value (SET) or
+ *                       list item (LIST) or key=value pair (KV); never run
+ *                       on defaults or count.
+ *                       NULL disables the check.
  *
  * out and name must not be NULL.
  * Returns CLP_OK, CLP_ERR_INVALID_NAME on an empty or invalid name, or CLP_ERR_ALLOC.
  */
-ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required, ClpError *err);
+ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required, ClpChecker checker,
+                              ClpError *err);
 
 /* Parse argv against the command tree rooted at root.
  *

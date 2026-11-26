@@ -49,7 +49,7 @@ ClpStatus clp_new_command(Command **out, int code, char *name, char *description
 }
 
 ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description, bool has_default_value, OptAction action, Value value, Type type, bool required, bool global,
-                             ClpError *err)
+                             ClpChecker checker, ClpError *err)
 {
     assert(out != NULL);
     assert(long_name != NULL || short_name != NULL);
@@ -113,12 +113,14 @@ ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, ch
     opt->type              = type;
     opt->required          = required;
     opt->global            = global;
+    opt->checker           = checker;
     opt->has_args          = !(type == TYPE_BOOL || action == OPT_ACT_COUNT);
     *out                   = opt;
     return CLP_OK;
 }
 
-ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required, ClpError *err)
+ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool has_default_value, OperandAction action, Value value, Type type, bool required, ClpChecker checker,
+                              ClpError *err)
 {
     assert(out != NULL);
     assert(name != NULL);
@@ -157,6 +159,7 @@ ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description, bool
     operand->has_default_value = has_default_value;
     operand->type              = type;
     operand->required          = required;
+    operand->checker           = checker;
     *out                       = operand;
     return CLP_OK;
 }

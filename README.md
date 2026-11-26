@@ -234,12 +234,14 @@ Operand *clp_get_operand        (Command *command, DStringView name);
 ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name,
                              char *description, bool has_default_value,
                              OptAction action, Value value,
-                             Type type, bool required, bool global, ClpError *err);
+                             Type type, bool required, bool global,
+                             ClpChecker checker, ClpError *err);
 
 ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description,
                               bool has_default_value,
                               OperandAction action, Value value,
-                              Type type, bool required, ClpError *err);
+                              Type type, bool required,
+                              ClpChecker checker, ClpError *err);
 /* every clp_new_option_* / clp_new_operand_* macro takes `out` first and `err` last */
 ```
 
@@ -286,6 +288,49 @@ clp_new_operand_list(op, name, desc, required)
 
 /* OPERAND_ACT_KV */
 clp_new_operand_kv(op, name, desc, required)
+```
+
+### Input checkers
+
+```c
+typedef const char *(*ClpChecker)(const Value *value);
+```
+
+A checker runs on a value right after it has been converted to its type.
+Return `NULL` to accept it, or a message with static lifetime to reject it:
+parsing then fails with `CLP_ERR_BAD_VALUE` and the message is appended to the
+usual `invalid value '...' for '--x'` error.
+
+- SET options/operands: the parsed value is checked.
+- LIST options/operands: each item is checked (as `value_d_string_view`),
+  including each comma-separated piece of an option value.
+- KV options/operands: each `key=value` pair is checked (as `value_key_value`,
+  a `ClpKeyValue { DStringView key; DStringView value; }`; the views are not
+  NUL-terminated). Malformed pairs are rejected with `CLP_ERR_BAD_KV` first.
+- Defaults and count values are never checked.
+
+```c
+static const char *jobs_range(const Value *v)
+{
+    return (v->value_long >= 1 && v->value_long <= 64) ? NULL : "must be in [1 64]";
+}
+
+clp_new_option_checked(&opt, "jobs", "j", "worker count", TYPE_LONG, false, false, jobs_range, &err);
+clp_new_option_default_long_checked(&opt, "jobs", "j", "worker count", 4, false, false, jobs_range, &err);
+clp_new_option_list_checked(&opt, "tag", "t", "tags", false, false, check_tag, &err);
+clp_new_operand_checked(&op, "port", "port to bind", TYPE_USIZE, true, port_range, &err);
+clp_new_operand_list_checked(&op, "files", "input files", true, check_file, &err);
+clp_new_option_kv_checked(&opt, "env", "e", "environment", false, false, check_env, &err);
+clp_new_operand_kv_checked(&op, "vars", "variables", true, check_env, &err);
+/* _default_{bool,char,str,long,usize,double}_checked exist for both options and operands */
+```
+
+```c
+static const char *check_env(const Value *v)
+{
+    const ClpKeyValue *kv = &v->value_key_value;
+    return kv->key.size <= 32 ? NULL : "key too long";
+}
 ```
 
 ---

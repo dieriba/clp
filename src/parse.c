@@ -26,7 +26,7 @@ static ClpStatus check_valid_long_opt_name(Command *root, DStringView long_opt, 
                       long_opt.data);
 }
 
-static ClpStatus add_new_kv_pairs(Command *root, DUnorderedMap *kv, const char *kv_pairs, const char *prefix, const char *arg_name, int arg_len, ClpError *err)
+static ClpStatus add_new_kv_pairs(Command *root, DUnorderedMap *kv, ClpChecker checker, const char *kv_pairs, const char *prefix, const char *arg_name, int arg_len, ClpError *err)
 {
     DStringView list = d_string_view_from_c_string(kv_pairs);
     usize       i = 0, j = 0;
@@ -51,6 +51,9 @@ static ClpStatus add_new_kv_pairs(Command *root, DUnorderedMap *kv, const char *
 
         DStringView value_str = d_string_view_subview(sub, eq_pos + 1, MAX_SIZE_T_VALUE);
         DResult     result;
+        const char *err_msg;
+        if (checker && (err_msg = checker(&(Value) {.value_key_value = {.key = key, .value = value_str}})) != NULL)
+            return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%.*s' for '%s%.*s': %s\n", root->name.data, (int) sub.size, sub.data, prefix, arg_len, arg_name, err_msg);
         if ((result = d_unordered_map_insert(kv, &key, &value_str)) != D_OK)
             return error_fail(err, CLP_ERR_ALLOC, root, "command %s: '%s%.*s': failed to store key '%.*s': %s\n", root->name.data, prefix, arg_len, arg_name, (int) key.size, key.data,
                               d_error_print_result_as_str(result));
@@ -72,7 +75,9 @@ static ClpStatus set_opt_value(Command *root, Option *opt, const char *operand, 
         {
             if (operand == NULL)
                 return error_fail(err, CLP_ERR_MISSING_ARG, root, "command %s: '%s%.*s' option require an argument\n", root->name.data, prefix, (int) len_name, opt_name);
-            char *err_msg = conversion_fn(operand, &opt->value);
+            const char *err_msg = conversion_fn(operand, &opt->value);
+            if (opt->checker && err_msg == NULL)
+                err_msg = opt->checker(&opt->value);
             if (err_msg)
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '%s%.*s': %s\n", root->name.data, operand, prefix, (int) len_name, opt_name, err_msg);
         }
@@ -92,6 +97,10 @@ static ClpStatus set_opt_value(Command *root, Option *opt, const char *operand, 
             j               = d_string_view_find_first_matching_char_from_index(list, ',', i);
             DStringView sub = d_string_view_subview(list, i, j - i);
             DResult     result;
+            const char *err_msg;
+            if (opt->checker && (err_msg = opt->checker(&(Value) {.value_d_string_view = sub})) != NULL)
+                return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%.*s' for '%s%.*s': %s\n", root->name.data, (int) sub.size, sub.data, prefix, (int) len_name, opt_name,
+                                  err_msg);
             if ((result = d_dyn_array_push_back(&opt->value.value_list, &sub)) != D_OK)
                 return error_fail(err, CLP_ERR_ALLOC, root, "error: %s\n", d_error_print_result_as_str(result));
             if (j == MAX_SIZE_T_VALUE)
@@ -102,7 +111,7 @@ static ClpStatus set_opt_value(Command *root, Option *opt, const char *operand, 
     case OPT_ACT_KV:
         if (operand == NULL)
             return error_fail(err, CLP_ERR_MISSING_ARG, root, "command %s: '%s%.*s' option require an argument\n", root->name.data, prefix, (int) len_name, opt_name);
-        CLP_TRY(add_new_kv_pairs(root, &opt->value.value_kv, operand, prefix, opt_name, (int) len_name, err));
+        CLP_TRY(add_new_kv_pairs(root, &opt->value.value_kv, opt->checker, operand, prefix, opt_name, (int) len_name, err));
         break;
     default:
         break;
@@ -129,7 +138,9 @@ static ClpStatus set_operand_value(Command *root, usize cursor, char *raw_operan
     switch (operand->action)
     {
     case OPERAND_ACT_SET:
-        char *err_msg = conversion_fn(raw_operand, &operand->value);
+        const char *err_msg = conversion_fn(raw_operand, &operand->value);
+        if (operand->checker && err_msg == NULL)
+            err_msg = operand->checker(&operand->value);
         if (err_msg)
             return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '<%s>': %s\n", root->name.data, raw_operand, operand->name.data, err_msg);
         argv++;
@@ -139,6 +150,9 @@ static ClpStatus set_operand_value(Command *root, usize cursor, char *raw_operan
         {
             DStringView list = d_string_view_from_c_string(raw_operand);
             DResult     result;
+            const char *err_msg;
+            if (operand->checker && (err_msg = operand->checker(&(Value) {.value_d_string_view = list})) != NULL)
+                return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '<%s>': %s\n", root->name.data, raw_operand, operand->name.data, err_msg);
             if ((result = d_dyn_array_push_back(&operand->value.value_list, &list)) != D_OK)
                 return error_fail(err, CLP_ERR_ALLOC, root, "%s\n", d_error_print_result_as_str(result));
             raw_operand = *(++argv);
@@ -147,7 +161,7 @@ static ClpStatus set_operand_value(Command *root, usize cursor, char *raw_operan
         }
         break;
     case OPERAND_ACT_KV:
-        CLP_TRY(add_new_kv_pairs(root, &operand->value.value_kv, raw_operand, "", operand->name.data, (int) operand->name.size, err));
+        CLP_TRY(add_new_kv_pairs(root, &operand->value.value_kv, operand->checker, raw_operand, "", operand->name.data, (int) operand->name.size, err));
         argv++;
         break;
     default:
