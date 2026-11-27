@@ -380,6 +380,5 @@ void clp_free_operand(Operand *operand)
 
 void clp_cleanup(Command *root)
 {
-    assert(root != NULL);
     free_command(root);
 }
