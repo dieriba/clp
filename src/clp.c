@@ -246,6 +246,30 @@ ClpStatus clp_add_command_option(Command *command, Option *command_option, ClpEr
     return CLP_OK;
 }
 
+ClpStatus clp_insert_opts(Command *command, const ClpOptionInfo *infos, usize count, ClpError *err)
+{
+    assert(command != NULL);
+    assert(infos != NULL || count == 0);
+
+    for (usize i = 0; i < count; i++)
+    {
+        const ClpOptionInfo *info = &infos[i];
+        Option              *opt  = NULL;
+        ClpStatus            status;
+
+        status = clp_new_option_raw(&opt, info->long_name, info->short_name, info->description, info->dest, info->action, info->type, info->required, info->global, info->checker,
+                                    info->transform, err);
+        if (status != CLP_OK)
+            return status;
+        if ((status = clp_add_command_option(command, opt, err)) != CLP_OK)
+        {
+            clp_free_option(opt);
+            return status;
+        }
+    }
+    return CLP_OK;
+}
+
 ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, ClpError *err)
 {
     assert(command != NULL);
@@ -266,6 +290,29 @@ ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, Cl
     if (d_dyn_array_push_back_ptr(&command->operands, command_operand) != D_OK)
         return error_fail(err, CLP_ERR_ALLOC, command, "out of memory\n");
 
+    return CLP_OK;
+}
+
+ClpStatus clp_insert_operands(Command *command, const ClpOperandInfo *infos, usize count, ClpError *err)
+{
+    assert(command != NULL);
+    assert(infos != NULL || count == 0);
+
+    for (usize i = 0; i < count; i++)
+    {
+        const ClpOperandInfo *info    = &infos[i];
+        Operand              *operand = NULL;
+        ClpStatus             status;
+
+        status = clp_new_operand_raw(&operand, info->name, info->description, info->dest, info->action, info->type, info->required, info->checker, info->transform, err);
+        if (status != CLP_OK)
+            return status;
+        if ((status = clp_add_command_operand(command, operand, err)) != CLP_OK)
+        {
+            clp_free_operand(operand);
+            return status;
+        }
+    }
     return CLP_OK;
 }
 

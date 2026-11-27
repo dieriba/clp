@@ -3500,6 +3500,95 @@ static void test_kv_operand_empty_value_exits(void)
 
 /* ── main ───────────────────────────────────────────────────────────────── */
 
+/* ── clp_insert_opts (create + register a table of options) ─────────────── */
+
+/* every entry is created, registered in order and bound to its dest */
+static void test_insert_opts_creates_and_registers(void)
+{
+    ClpError e;
+    bool     verbose = false;
+    long     jobs    = 4;
+    usize    port    = 8080;
+    Command *root    = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+
+    ClpOptionInfo opts[] = {
+        {"verbose", "v", "verbose output", &verbose, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
+        {"jobs", "j", "worker count", &jobs, OPT_ACT_SET, TYPE_LONG, false, true, NULL, NULL},
+        {"port", NULL, NULL, &port, OPT_ACT_SET, TYPE_USIZE, false, false, check_port_range, NULL},
+    };
+    D_TEST_EXPR(clp_insert_opts(root, opts, sizeof(opts) / sizeof(*opts), &e) == CLP_OK);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 3);
+
+    Option *o_jobs = clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("jobs"));
+    D_TEST_NOT_NULL(o_jobs);
+    D_TEST_EXPR(o_jobs->dest == &jobs && o_jobs->global == true && o_jobs->short_name == 'j');
+    Option *o_port = clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("port"));
+    D_TEST_NOT_NULL(o_port);
+    D_TEST_EXPR(o_port->checker == check_port_range);
+
+    char    *argv[] = {"prog", "-v", "--jobs", "12", "--port", "443", NULL};
+    Command *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(verbose == true && jobs == 12 && port == 443);
+    clp_cleanup(root);
+}
+
+/* count 0 is a no-op, infos may then be NULL */
+static void test_insert_opts_empty(void)
+{
+    ClpError e;
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    D_TEST_EXPR(clp_insert_opts(root, NULL, 0, &e) == CLP_OK);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 0);
+    clp_cleanup(root);
+}
+
+/* a duplicate stops the insertion: err is filled, earlier entries stay */
+static void test_insert_opts_stops_on_duplicate(void)
+{
+    ClpError e;
+    bool     a = false, b = false, c = false;
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+
+    ClpOptionInfo opts[] = {
+        {"alpha", "a", NULL, &a, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
+        {"beta", "a", NULL, &b, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
+        {"gamma", "g", NULL, &c, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_opts(root, opts, sizeof(opts) / sizeof(*opts), &e) == CLP_ERR_DUPLICATE);
+    D_TEST_EXPR(e.code == CLP_ERR_DUPLICATE);
+    D_TEST_NOT_NULL(strstr(e.message, "'-a'"));
+    D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 1);
+    D_TEST_NOT_NULL(clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("alpha")));
+    D_TEST_EXPR(clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("gamma")) == NULL);
+    clp_cleanup(root);
+}
+
+/* an entry clp_new_option_raw rejects stops the insertion with its status */
+static void test_insert_opts_stops_on_invalid_entry(void)
+{
+    ClpError e;
+    long     n = 0;
+    usize    v = 0;
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+
+    ClpOptionInfo bad_name[] = {
+        {"num", "n", NULL, &n, OPT_ACT_SET, TYPE_LONG, false, false, NULL, NULL},
+        {"bad name", NULL, NULL, &n, OPT_ACT_SET, TYPE_LONG, false, false, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_opts(root, bad_name, 2, &e) == CLP_ERR_INVALID_NAME);
+    D_TEST_EXPR(e.code == CLP_ERR_INVALID_NAME);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 1);
+
+    ClpOptionInfo bad_type[] = {
+        {"verbose", "v", NULL, &v, OPT_ACT_COUNT, TYPE_LONG, false, false, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_opts(root, bad_type, 1, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(e.code == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 1);
+    clp_cleanup(root);
+}
+
 /* ── dest binding (real typed macros, caller-owned variables) ───────────── */
 
 /* values land in the caller's variables; absent options keep their defaults */
@@ -3989,6 +4078,107 @@ static void test_non_global_parent_option_unknown_in_child(void)
 }
 
 
+/* every operand entry is created, registered in order and bound to its dest */
+static void test_insert_operands_creates_and_registers(void)
+{
+    ClpError    e;
+    DStringView host = D_STRING_VIEW_FROM_LITERAL("none");
+    usize       port = 0;
+    DDynArray   rest;
+    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    D_TEST_EXPR(clp_list_init(&rest, &e) == CLP_OK);
+
+    ClpOperandInfo ops[] = {
+        {"host", "host to reach", &host, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+        {"port", NULL, &port, OPERAND_ACT_SET, TYPE_USIZE, false, check_port_range, NULL},
+        {"rest", NULL, &rest, OPERAND_ACT_LIST, TYPE_STR, false, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_operands(root, ops, sizeof(ops) / sizeof(*ops), &e) == CLP_OK);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 3);
+    DDynArray *operands = &root->operands;
+    Operand   *o_port   = d_dyn_array_get_elem_deref_addr_at_safe(operands, 1);
+    D_TEST_EXPR(o_port->dest == &port && o_port->checker == check_port_range && o_port->required == false);
+
+    char    *argv[] = {"prog", "example.com", "443", "x", "y", NULL};
+    Command *cmd    = NULL;
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(d_string_view_compare_against_c_string(host, "example.com"));
+    D_TEST_EXPR(port == 443);
+    D_TEST_EXPR(d_dyn_array_get_size(&rest) == 2);
+    clp_cleanup(root);
+    clp_list_destroy(&rest);
+}
+
+/* count 0 is a no-op, infos may then be NULL */
+static void test_insert_operands_empty(void)
+{
+    ClpError e;
+    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    D_TEST_EXPR(clp_insert_operands(root, NULL, 0, &e) == CLP_OK);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 0);
+    clp_cleanup(root);
+}
+
+/* a required operand after an optional one stops the insertion; earlier entries stay */
+static void test_insert_operands_stops_on_order_error(void)
+{
+    ClpError    e;
+    DStringView a = {0}, b = {0}, c = {0};
+    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+
+    ClpOperandInfo ops[] = {
+        {"first", NULL, &a, OPERAND_ACT_SET, TYPE_STR, false, NULL, NULL},
+        {"second", NULL, &b, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+        {"third", NULL, &c, OPERAND_ACT_SET, TYPE_STR, false, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_operands(root, ops, sizeof(ops) / sizeof(*ops), &e) == CLP_ERR_OPERAND_ORDER);
+    D_TEST_EXPR(e.code == CLP_ERR_OPERAND_ORDER);
+    D_TEST_NOT_NULL(strstr(e.message, "'second'"));
+    D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 1);
+    clp_cleanup(root);
+}
+
+/* an entry clp_new_operand_raw rejects stops the insertion with its status */
+static void test_insert_operands_stops_on_invalid_entry(void)
+{
+    ClpError    e;
+    DStringView s = {0};
+    usize       n = 0;
+    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+
+    ClpOperandInfo bad_name[] = {
+        {"file", NULL, &s, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+        {"", NULL, &s, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_operands(root, bad_name, 2, &e) == CLP_ERR_INVALID_NAME);
+    D_TEST_EXPR(e.code == CLP_ERR_INVALID_NAME);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 1);
+
+    ClpOperandInfo bad_type[] = {
+        {"num", NULL, &n, OPERAND_ACT_SET, TYPE_USIZE, true, check_port_range, parse_ts},
+    };
+    D_TEST_EXPR(clp_insert_operands(root, bad_type, 1, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 1);
+    clp_cleanup(root);
+}
+
+/* operands cannot go on a command that already has subcommands */
+static void test_insert_operands_conflict_with_subcommands(void)
+{
+    ClpError    e;
+    DStringView s = {0};
+    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL);
+    Command    *sub  = T_NEW(Command, clp_new_command, 0, "sub", NULL);
+    T_ADD(clp_add_command_sub_command, root, sub);
+
+    ClpOperandInfo ops[] = {
+        {"file", NULL, &s, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_operands(root, ops, 1, &e) == CLP_ERR_CONFLICT);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 0);
+    clp_cleanup(root);
+}
+
 int main(void)
 {
     atexit(t_release_dests);
@@ -3998,6 +4188,15 @@ int main(void)
         D_TEST_GENERATE_TEST(test_option_transform_rejects_and_absent),
         D_TEST_GENERATE_TEST(test_option_transform_required),
         D_TEST_GENERATE_TEST(test_operand_transform),
+        D_TEST_GENERATE_TEST(test_insert_opts_creates_and_registers),
+        D_TEST_GENERATE_TEST(test_insert_opts_empty),
+        D_TEST_GENERATE_TEST(test_insert_opts_stops_on_duplicate),
+        D_TEST_GENERATE_TEST(test_insert_opts_stops_on_invalid_entry),
+        D_TEST_GENERATE_TEST(test_insert_operands_creates_and_registers),
+        D_TEST_GENERATE_TEST(test_insert_operands_empty),
+        D_TEST_GENERATE_TEST(test_insert_operands_stops_on_order_error),
+        D_TEST_GENERATE_TEST(test_insert_operands_stops_on_invalid_entry),
+        D_TEST_GENERATE_TEST(test_insert_operands_conflict_with_subcommands),
         D_TEST_GENERATE_TEST(test_transform_invalid_combinations),
         D_TEST_GENERATE_TEST(test_transform_help_shows_value),
         D_TEST_GENERATE_TEST(test_bool_flag_with_and_without_following_token),

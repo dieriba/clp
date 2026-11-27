@@ -407,6 +407,42 @@ clp_new_operand_kv_checked  (out, name, desc, dest, required, checker, err)
 clp_new_operand_transform(out, name, desc, transform, ctx, required, err)         /* no dest; ctx → transform */
 ```
 
+### Inserting a table of options / operands
+
+`clp_insert_opts` and `clp_insert_operands` create and register a whole array in one call. Each `ClpOptionInfo` / `ClpOperandInfo` holds the arguments of `clp_new_option_raw` / `clp_new_operand_raw`, with the same rules (and, like the raw constructors, no check that `dest` matches `type`).
+
+```c
+typedef struct ClpOptionInfo {
+    char *long_name; char *short_name; char *description; void *dest;
+    OptAction action; Type type; bool required; bool global;
+    ClpChecker checker; ClpTransform transform;
+} ClpOptionInfo;
+
+typedef struct ClpOperandInfo {
+    char *name; char *description; void *dest;
+    OperandAction action; Type type; bool required;
+    ClpChecker checker; ClpTransform transform;
+} ClpOperandInfo;
+
+ClpStatus clp_insert_opts(Command *command, const ClpOptionInfo *infos, usize count, ClpError *err);
+ClpStatus clp_insert_operands(Command *command, const ClpOperandInfo *infos, usize count, ClpError *err);
+```
+
+```c
+ClpOptionInfo opts[] = {
+    {"verbose", "v", "verbose output", &verbose, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
+    {"jobs",    "j", "worker count",   &jobs,    OPT_ACT_SET, TYPE_LONG, false, false, jobs_range, NULL},
+};
+ClpOperandInfo ops[] = {
+    {"host", "host to reach", &host, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+};
+if (clp_insert_opts(root, opts, sizeof(opts) / sizeof(*opts), &err) != CLP_OK ||
+    clp_insert_operands(root, ops, sizeof(ops) / sizeof(*ops), &err) != CLP_OK)
+    ...
+```
+
+Entries are inserted in order and insertion stops at the first failure: `err` is filled and its status returned, the entry that failed is released, and the entries inserted before it stay on the command (freed by `clp_cleanup`). `infos` may be `NULL` when `count` is `0`.
+
 ### Raw constructors (full control)
 
 The macros cover every combination; the raw constructors do not check that `dest` matches `type`, so prefer the macros.

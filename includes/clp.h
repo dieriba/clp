@@ -417,6 +417,43 @@ ClpStatus clp_add_command_sub_command(Command *command, Command *sub_command, Cl
  */
 ClpStatus clp_add_command_option(Command *command, Option *command_option, ClpError *err);
 
+/* Everything needed to create one option: the arguments of clp_new_option_raw,
+ * as a struct, so a table of them can be handed to clp_insert_opts. */
+typedef struct ClpOptionInfo
+{
+    char        *long_name;   /* without "--", or NULL for a short-only option */
+    char        *short_name;  /* single character (e.g. "v"), or NULL for a long-only option */
+    char        *description; /* help text; NULL is accepted */
+    void        *dest;        /* caller-owned; for TYPE_CUSTOM the transform's ctx */
+    OptAction    action;
+    Type         type;
+    bool         required;
+    bool         global;
+    ClpChecker   checker;   /* NULL when unchecked */
+    ClpTransform transform; /* set only for TYPE_CUSTOM */
+} ClpOptionInfo;
+
+/* Create count options from infos and register each one on command, in order.
+ *
+ * Each entry follows the rules of clp_new_option_raw (field for field) and of
+ * clp_add_command_option.  Nothing checks that dest matches type.
+ *
+ * Stops at the first failure: err is filled and its status returned.  The
+ * option that failed is released; the ones inserted before it stay on command
+ * and are freed by clp_cleanup.
+ *
+ *   ClpOptionInfo opts[] = {
+ *       {"verbose", "v", "verbose output", &verbose, OPT_ACT_SET,   TYPE_BOOL,  false, false, NULL, NULL},
+ *       {"jobs",    "j", "worker count",   &jobs,    OPT_ACT_SET,   TYPE_LONG,  false, false, jobs_range, NULL},
+ *   };
+ *   if (clp_insert_opts(root, opts, sizeof(opts) / sizeof(*opts), &err) != CLP_OK)
+ *       ...
+ *
+ * command must not be NULL, nor infos unless count is 0.
+ * Returns CLP_OK, or any status of clp_new_option_raw / clp_add_command_option.
+ */
+ClpStatus clp_insert_opts(Command *command, const ClpOptionInfo *infos, usize count, ClpError *err);
+
 /* Register an operand on a command.
  *
  * Operands are consumed in registration order.  A required operand must not
@@ -431,6 +468,44 @@ ClpStatus clp_add_command_option(Command *command, Option *command_option, ClpEr
  * by the caller; release it with clp_free_operand.
  */
 ClpStatus clp_add_command_operand(Command *command, Operand *command_operand, ClpError *err);
+
+/* Everything needed to create one operand: the arguments of
+ * clp_new_operand_raw, as a struct, so a table of them can be handed to
+ * clp_insert_operands. */
+typedef struct ClpOperandInfo
+{
+    char         *name;        /* shown in usage and --help; not NULL or empty */
+    char         *description; /* help text; NULL is accepted */
+    void         *dest;        /* caller-owned; for TYPE_CUSTOM the transform's ctx */
+    OperandAction action;
+    Type          type;
+    bool          required;
+    ClpChecker    checker;   /* NULL when unchecked */
+    ClpTransform  transform; /* set only for TYPE_CUSTOM */
+} ClpOperandInfo;
+
+/* Create count operands from infos and register each one on command, in order.
+ *
+ * Each entry follows the rules of clp_new_operand_raw (field for field) and of
+ * clp_add_command_operand (no operands on a command with subcommands, no
+ * required operand after an optional one).  Nothing checks that dest matches
+ * type.
+ *
+ * Stops at the first failure: err is filled and its status returned.  The
+ * operand that failed is released; the ones inserted before it stay on
+ * command and are freed by clp_cleanup.
+ *
+ *   ClpOperandInfo ops[] = {
+ *       {"host", "host to reach",   &host,  OPERAND_ACT_SET,  TYPE_STR, true,  NULL, NULL},
+ *       {"args", "extra arguments", &extra, OPERAND_ACT_LIST, TYPE_STR, false, NULL, NULL},
+ *   };
+ *   if (clp_insert_operands(root, ops, sizeof(ops) / sizeof(*ops), &err) != CLP_OK)
+ *       ...
+ *
+ * command must not be NULL, nor infos unless count is 0.
+ * Returns CLP_OK, or any status of clp_new_operand_raw / clp_add_command_operand.
+ */
+ClpStatus clp_insert_operands(Command *command, const ClpOperandInfo *infos, usize count, ClpError *err);
 
 /* Low-level option allocator — prefer the clp_new_option* macros.
  *
