@@ -3626,7 +3626,7 @@ static TsType      ts_seen;
 static int         transform_calls;
 static const char *last_transform_arg;
 
-static const char *parse_ts(const char *arg, void *ctx)
+static const char *parse_ts(void *ctx, const char *arg)
 {
     TsType *out = ctx;
     transform_calls++;
@@ -3833,7 +3833,7 @@ static void test_transform_ctx_shared_by_two_options(void)
 
 /* a NULL ctx is passed through as is */
 static void *seen_ctx = (void *) 1;
-static const char *record_ctx(const char *arg, void *ctx)
+static const char *record_ctx(void *ctx, const char *arg)
 {
     (void) arg;
     seen_ctx = ctx;

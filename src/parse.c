@@ -137,7 +137,7 @@ static ClpStatus bind_opt_value(Command *root, Option *opt, const char *operand,
         const char *err_msg;
         if (opt->transform)
         {
-            if ((err_msg = opt->transform(operand, opt->dest)) != NULL)
+            if ((err_msg = opt->transform(opt->dest, operand)) != NULL)
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '%s%.*s': %s\n", root->name.data, operand, prefix, (int) len_name, opt_name, err_msg);
             break;
         }
@@ -205,7 +205,7 @@ static ClpStatus bind_operand_value(Command *root, usize cursor, char *raw_opera
         const char *err_msg;
         if (operand->transform)
         {
-            if ((err_msg = operand->transform(raw_operand, operand->dest)) != NULL)
+            if ((err_msg = operand->transform(operand->dest, raw_operand)) != NULL)
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '<%s>': %s\n", root->name.data, raw_operand, operand->name.data, err_msg);
             argv++;
             break;

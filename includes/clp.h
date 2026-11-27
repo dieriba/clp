@@ -124,7 +124,7 @@
  *
  * A transform option (no dest; the callback stores through its ctx):
  *   Mode mode = MODE_FAST;                 // default value
- *   static const char *parse_mode(const char *arg, void *ctx)
+ *   static const char *parse_mode(void *ctx, const char *arg)
  *   {
  *       Mode *out = ctx;
  *       if (strcmp(arg, "fast") == 0) { *out = MODE_FAST; return NULL; }
@@ -294,7 +294,7 @@ typedef const char *(*ClpChecker)(const void *value);
  * Return NULL to accept, or a message with static lifetime to reject
  * (parse fails with CLP_ERR_BAD_VALUE and value_set stays false).
  * Anything the transform stored before rejecting is its own responsibility. */
-typedef const char *(*ClpTransform)(const char *arg, void *ctx);
+typedef const char *(*ClpTransform)(void *ctx, const char *arg);
 
 typedef struct Operand
 {

@@ -304,7 +304,7 @@ clp_new_operand_kv_checked(&op, "vars", "variables", &vars, true, check_env, &er
 When an argument needs parsing the built-in types cannot express (an enum, a hex pattern, a set of flags, ...), use a transform. It takes **no `dest`**: it receives the raw argument plus a `ctx` pointer given at registration, and decides what to do with them — usually parse the argument and store the result through `ctx`.
 
 ```c
-typedef const char *(*ClpTransform)(const char *arg, void *ctx);
+typedef const char *(*ClpTransform)(void *ctx, const char *arg);
 ```
 
 - `arg` is the raw, NUL-terminated argument, pointing into `argv`.
@@ -316,7 +316,7 @@ typedef const char *(*ClpTransform)(const char *arg, void *ctx);
 ```c
 typedef enum { TS_NONE, TS_ONLY, TS_ADDR } TsType;
 
-static const char *parse_timestamp(const char *arg, void *ctx)
+static const char *parse_timestamp(void *ctx, const char *arg)
 {
     TsType *out = ctx;
     if (strcmp(arg, "tsonly") == 0)
