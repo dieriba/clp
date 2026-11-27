@@ -19,8 +19,8 @@ A command owns a set of options and either operands **or** subcommands (never bo
 ```c
 Command *root, *push;
 ClpError err;
-if (clp_new_command(&root, 0, "git", "the stupid content tracker", &err) != CLP_OK ||
-    clp_new_command(&push, 1, "push", "update remote refs", &err) != CLP_OK ||
+if (clp_new_command(&root, 0, "git", "the stupid content tracker", NULL, NULL, &err) != CLP_OK ||
+    clp_new_command(&push, 1, "push", "update remote refs", NULL, NULL, &err) != CLP_OK ||
     clp_add_command_sub_command(root, push, &err) != CLP_OK)
     { /* handle err */ }
 ```
@@ -139,7 +139,7 @@ int main(int argc, char **argv)
     Option     *verbose_opt, *jobs_opt;
     Operand    *file_op;
 
-    if (clp_new_command(&root, 0, "prog", "my program", &err) != CLP_OK)
+    if (clp_new_command(&root, 0, "prog", "my program", NULL, NULL, &err) != CLP_OK)
     {
         clp_print_error(stderr, &err);
         return 1;
@@ -182,9 +182,9 @@ The snippets below omit error checks on the builders for brevity; every builder 
 
 ```c
 Command *root, *add, *rm;
-clp_new_command(&root, 0, "prog", "description", &err);
-clp_new_command(&add, 1, "add", "add a file", &err);
-clp_new_command(&rm, 2, "rm", "remove a file", &err);
+clp_new_command(&root, 0, "prog", "description", NULL, NULL, &err);
+clp_new_command(&add, 1, "add", "add a file", NULL, NULL, &err);
+clp_new_command(&rm, 2, "rm", "remove a file", NULL, NULL, &err);
 clp_add_command_sub_command(root, add, &err);
 clp_add_command_sub_command(root, rm, &err);
 
@@ -338,6 +338,38 @@ clp_new_operand_transform(&op, "mode", "run mode", parse_mode, &mode, true, &err
 
 ---
 
+## Command validators (post-parse)
+
+Checkers and transforms see one value at a time. Rules that span several arguments ("`-f` and `-i` are incompatible", "`--tsaddr` needs `--timestamp`") go in a validator, given to `clp_new_command` with a `ctx`:
+
+```c
+typedef const char *(*ClpValidator)(void *ctx);
+```
+
+- Runs once the command's arguments are all parsed and its required arguments are present. It does not run if parsing failed earlier, and it runs even when the command got no arguments.
+- Only the validator of the command parsing ends on runs (the one returned through `command`), not its ancestors'.
+- `ctx` is passed through untouched.
+- Return `NULL` to accept, or a message with static lifetime to reject: parsing fails with `CLP_ERR_VALIDATOR`, `err->command` is the command and the message reads `command <name>: <your message>`.
+
+```c
+typedef struct { Option *flood, *interval; } PingRules;
+
+static const char *check_ping(void *ctx)
+{
+    PingRules *r = ctx;
+    if (r->flood->value_set && r->interval->value_set)
+        return "-f and -i are incompatible";
+    return NULL;
+}
+
+PingRules rules;
+clp_new_command(&root, 0, "ping", "send ICMP ECHO_REQUEST", check_ping, &rules, &err);
+clp_new_option(&rules.flood, "flood", "f", "flood ping", &flood, false, false, &err);
+clp_new_option(&rules.interval, "interval", "i", "wait between packets", &interval, false, false, &err);
+```
+
+---
+
 ## API reference
 
 ### Lifecycle
@@ -345,7 +377,7 @@ clp_new_operand_transform(&op, "mode", "run mode", parse_mode, &mode, true, &err
 ```c
 /* Builders never exit: they return a ClpStatus and fill err (may be NULL).
    Constructors set *out to NULL on failure. */
-ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpError *err);
+ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpValidator validator, void *ctx, ClpError *err);
 ClpStatus clp_add_command_option(Command *command, Option *option, ClpError *err);
 ClpStatus clp_add_command_operand(Command *command, Operand *operand, ClpError *err);
 ClpStatus clp_add_command_sub_command(Command *command, Command *sub_command, ClpError *err);
@@ -492,5 +524,6 @@ Builders and `clp_try_parse_args` never exit: they return a `ClpStatus` and fill
 | KV pair missing `=`, or with an empty key or value         | `CLP_ERR_BAD_KV`                               |
 | Too many positional arguments                              | `CLP_ERR_TOO_MANY_OPERANDS`                    |
 | Missing required option or operand                         | `CLP_ERR_MISSING_REQUIRED` (message includes usage) |
+| Rejected by the matched command's validator               | `CLP_ERR_VALIDATOR`                            |
 
 On a parse error, `dest`s written before the error keep their values (for LIST/KV, so do the items accepted before the bad one) and transforms that already accepted an argument are not undone. The rejected value itself is never written.

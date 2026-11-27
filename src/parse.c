@@ -312,6 +312,15 @@ static ClpStatus interpret_hyphen(Command *root, char *arg, char ***argvp, usize
     return parse_short_opts(root, arg, argvp, err);
 }
 
+static ClpStatus finish_command(Command *root, ClpError *err)
+{
+    CLP_TRY(check_required_args(root, err));
+
+    const char *err_msg;
+    if (root->validator != NULL && (err_msg = root->validator(root->ctx)) != NULL)
+        return error_fail(err, CLP_ERR_VALIDATOR, root, "command %s: %s\n", root->name.data, err_msg);
+    return CLP_OK;
+}
 
 ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err)
 {
@@ -322,7 +331,7 @@ ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err)
     usize      cmd_parsed_operand = 0;
 
     if (*argv == NULL)
-        return check_required_args(root, err);
+        return finish_command(root, err);
 
     while ((s = *argv) != NULL)
     {
@@ -356,5 +365,5 @@ ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err)
         CLP_TRY(bind_operand_value(root, cmd_parsed_operand++, s, &argv, false, err));
     }
 
-    return check_required_args(root, err);
+    return finish_command(root, err);
 }

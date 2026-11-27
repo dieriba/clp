@@ -84,6 +84,8 @@ const char *clp_status_to_str(ClpStatus code)
         return "invalid type for action";
     case CLP_ERR_CONFLICT:
         return "operands and subcommands conflict";
+    case CLP_ERR_VALIDATOR:
+        return "rejected by command validator";
     case CLP_ERR_OPERAND_ORDER:
         return "required operand after optional operand";
     }

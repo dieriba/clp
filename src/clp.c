@@ -23,7 +23,7 @@ static bool is_valid_short(char shrt)
 
 #define LONG_NAME_RULE "a long option must start with a letter and contain only [a-z A-Z 0-9 -]\n"
 
-ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpError *err)
+ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpValidator validator, void *ctx, ClpError *err)
 {
     assert(out != NULL);
     assert(name != NULL);
@@ -37,6 +37,8 @@ ClpStatus clp_new_command(Command **out, int code, char *name, char *description
     command->description    = description == NULL ? NO_DESC : description;
     command->code           = code;
     command->parent_command = NULL;
+    command->validator      = validator;
+    command->ctx            = ctx;
 
     if (d_dyn_array_default_ptr_arr_init(&command->sub_commands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->options, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK ||
         d_dyn_array_default_ptr_arr_init(&command->extra, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK || d_dyn_array_default_ptr_arr_init(&command->operands, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)

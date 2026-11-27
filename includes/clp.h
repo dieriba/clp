@@ -343,30 +343,45 @@ typedef enum ClpStatus
     CLP_ERR_INVALID_TYPE,      /* action/type/checker/transform combination not allowed (e.g. count on a non-usize type, transform without TYPE_CUSTOM) */
     CLP_ERR_CONFLICT,          /* command would have both operands and subcommands */
     CLP_ERR_OPERAND_ORDER,     /* required operand registered after an optional one */
+    CLP_ERR_VALIDATOR,         /* rejected by the command's ClpValidator */
 } ClpStatus;
+
+typedef struct ClpError ClpError;
+
+/* User hook run on a command once its arguments are all parsed and its
+ * required arguments are present: the place for rules spanning several
+ * options/operands (e.g. "-f and -i are incompatible").
+ * Only the validator of the command parse ends on (the one returned through
+ * clp_try_parse_args' command) runs; its ancestors' validators do not.
+ * ctx is the pointer given to clp_new_command, passed through untouched.
+ * Return NULL to accept, or a message with static lifetime to reject (parse
+ * fails with CLP_ERR_VALIDATOR, err->command set to the command). */
+typedef const char *(*ClpValidator)(void *ctx);
 
 typedef struct Command Command;
 
 struct Command
 {
-    DDynArray   options;
-    DDynArray   operands;
-    DDynArray   sub_commands;
-    DDynArray   extra;
-    DStringView name;
-    Command    *parent_command;
-    char       *description;
-    int         code;
+    DDynArray    options;
+    DDynArray    operands;
+    DDynArray    sub_commands;
+    DDynArray    extra;
+    DStringView  name;
+    Command     *parent_command;
+    ClpValidator validator;
+    void        *ctx;
+    char        *description;
+    int          code;
 };
 
 #define CLP_ERR_MSG_SIZE 1024
 
-typedef struct ClpError
+struct ClpError
 {
     Command  *command;                   /* command being parsed when the error occurred */
     ClpStatus code;                      /* CLP_OK, CLP_HELP_SHOWN or a CLP_ERR_* code */
     char      message[CLP_ERR_MSG_SIZE]; /* human-readable, may span several lines; truncated if too long */
-} ClpError;
+};
 
 /* Return a short static string naming code (e.g. "unknown option"). */
 const char *clp_status_to_str(ClpStatus code);
@@ -388,13 +403,15 @@ const char *clp_status_to_str(ClpStatus code);
  *                 Must not be NULL.
  *   description — shown in --help output; NULL is accepted (shown as
  *                 "no associated description").
+ *   validator   — ClpValidator run after this command is parsed, or NULL.
+ *   ctx         — passed untouched to validator; may be NULL.
  *
  * The returned pointer is owned by the caller.  Pass it to clp_cleanup to
  * release the command and all its descendant resources.  out and name must not be NULL.
  *
  * Returns CLP_OK, or CLP_ERR_ALLOC.
  */
-ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpError *err);
+ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpValidator validator, void *ctx, ClpError *err);
 
 /* Attach sub_command as a child of command.
  *
