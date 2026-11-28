@@ -266,7 +266,7 @@ static clp_status_t parse_remaining_operands(clp_command_t *root, usize *operand
     return CLP_OK;
 }
 
-static clp_status_t parse_long_opt(clp_command_t *root, char *lng_opt, char ***argvp, clp_error_t *err)
+static clp_status_t parse_long_opt(clp_t *clp, clp_command_t *root, char *lng_opt, char ***argvp, clp_error_t *err)
 {
     char          **argv             = *argvp;
     d_string_view_t long_opt         = d_string_view_from_c_string(lng_opt);
@@ -276,7 +276,7 @@ static clp_status_t parse_long_opt(clp_command_t *root, char *lng_opt, char ***a
         long_opt = d_string_view_subview(long_opt, 0, eq_pos);
     CLP_TRY(check_valid_long_opt_name(root, long_opt, err));
     clp_option_t *opt = find_option_by_long(root, long_opt);
-    CLP_TRY(check_help_or_invalid_opt(root, opt, DOUBLE_HYPHEN, long_opt.data, long_opt.size, err));
+    CLP_TRY(check_help_or_invalid_opt(clp, root, opt, DOUBLE_HYPHEN, long_opt.data, long_opt.size, err));
     if (has_inline_value && opt->has_args == false)
         return error_fail(err, CLP_ERR_UNEXPECTED_ARG, root, "command %s: option '--%s' doesn't allow an argument\n", root->name.data, opt->long_name.data);
     const char *operand = has_inline_value ? &long_opt.data[eq_pos + 1] : *argv;
@@ -285,14 +285,14 @@ static clp_status_t parse_long_opt(clp_command_t *root, char *lng_opt, char ***a
     return CLP_OK;
 }
 
-static clp_status_t parse_short_opts(clp_command_t *root, char *short_opt, char ***argvp, clp_error_t *err)
+static clp_status_t parse_short_opts(clp_t *clp, clp_command_t *root, char *short_opt, char ***argvp, clp_error_t *err)
 {
     char **argv = *argvp;
     usize  i    = 0;
     do
     {
         clp_option_t *opt = find_option_by_short(root, short_opt[i]);
-        CLP_TRY(check_help_or_invalid_opt(root, opt, HYPHEN, &short_opt[i], 1, err));
+        CLP_TRY(check_help_or_invalid_opt(clp, root, opt, HYPHEN, &short_opt[i], 1, err));
         if (opt->has_args == true)
         {
             bool  consume_next_argv = short_opt[i + 1] == 0;
@@ -306,16 +306,16 @@ static clp_status_t parse_short_opts(clp_command_t *root, char *short_opt, char 
     return CLP_OK;
 }
 
-static clp_status_t interpret_hyphen(clp_command_t *root, char *arg, char ***argvp, usize *operand_cusor, clp_error_t *err)
+static clp_status_t interpret_hyphen(clp_t *clp, clp_command_t *root, char *arg, char ***argvp, usize *operand_cusor, clp_error_t *err)
 {
     ++*argvp;
     if (STR_STARTS_WITH_HYPEN(arg))
     {
         if (arg[1] == 0)
             return parse_remaining_operands(root, operand_cusor, argvp, err);
-        return parse_long_opt(root, &arg[1], argvp, err);
+        return parse_long_opt(clp, root, &arg[1], argvp, err);
     }
-    return parse_short_opts(root, arg, argvp, err);
+    return parse_short_opts(clp, root, arg, argvp, err);
 }
 
 static clp_status_t finish_command(clp_command_t *root, clp_error_t *err)
@@ -328,7 +328,7 @@ static clp_status_t finish_command(clp_command_t *root, clp_error_t *err)
     return CLP_OK;
 }
 
-clp_status_t parse(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err)
+clp_status_t parse(clp_t *clp, clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err)
 {
     ++argv; // skip program name at first call then skip current command name already parsed
     char          *s;
@@ -343,7 +343,7 @@ clp_status_t parse(clp_command_t *root, char **argv, clp_command_t **command, cl
     {
         if (STR_STARTS_WITH_HYPEN(s))
         {
-            CLP_TRY(interpret_hyphen(root, &s[1], &argv, &cmd_parsed_operand, err));
+            CLP_TRY(interpret_hyphen(clp, root, &s[1], &argv, &cmd_parsed_operand, err));
             continue;
         }
 
@@ -353,7 +353,7 @@ clp_status_t parse(clp_command_t *root, char **argv, clp_command_t **command, cl
             if (d_string_view_compare_against_c_string(sub_cmd->name, s))
             {
                 *command = sub_cmd;
-                return parse(sub_cmd, argv, command, err);
+                return parse(clp, sub_cmd, argv, command, err);
             }
         }
 
@@ -364,7 +364,7 @@ clp_status_t parse(clp_command_t *root, char **argv, clp_command_t **command, cl
     {
         if (STR_STARTS_WITH_HYPEN(s))
         {
-            CLP_TRY(interpret_hyphen(root, &s[1], &argv, &cmd_parsed_operand, err));
+            CLP_TRY(interpret_hyphen(clp, root, &s[1], &argv, &cmd_parsed_operand, err));
             continue;
         }
     PARSE_OPERAND:

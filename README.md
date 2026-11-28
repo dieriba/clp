@@ -155,12 +155,13 @@ int main(int argc, char **argv)
         /* an option/operand whose clp_add_* failed is still yours:
            release it with clp_free_option / clp_free_operand */
         clp_print_error(stderr, &err);
-        clp_cleanup(root);
+        clp_cleanup(&(clp_t){.root = root});
         return 1;
     }
 
+    clp_t          clp = {.root = root, .author = "me", .description = "my program", .version = "1.0.0"};
     clp_command_t *cmd = NULL;
-    clp_parse_args(root, argv, &cmd); /* exits on error or --help */
+    clp_parse_args(&clp, argv, &cmd); /* exits on error or --help */
 
     if (verbose)
         printf("verbose mode on\n");
@@ -168,7 +169,7 @@ int main(int argc, char **argv)
         printf("jobs given on the command line\n");
     printf("file: %s, jobs: %ld\n", file.data, jobs);
 
-    clp_cleanup(root);
+    clp_cleanup(&clp);
     return 0;
 }
 ```
@@ -189,14 +190,15 @@ clp_new_command(&rm, 2, "rm", "remove a file", NULL, NULL, &err);
 clp_add_command_sub_command(root, add, &err);
 clp_add_command_sub_command(root, rm, &err);
 
+clp_t          clp = {.root = root};
 clp_command_t *cmd = NULL;
-clp_parse_args(root, argv, &cmd);
+clp_parse_args(&clp, argv, &cmd);
 switch (cmd ? cmd->code : -1)
 {
 case 1: /* add */ break;
 case 2: /* rm  */ break;
 }
-clp_cleanup(root);
+clp_cleanup(&clp);
 ```
 
 ### Count option (`-d`, `-ddd`, `--debug`)
@@ -399,13 +401,13 @@ clp_status_t clp_add_command_option(clp_command_t *command, clp_option_t *option
 clp_status_t clp_add_command_operand(clp_command_t *command, clp_operand_t *operand, clp_error_t *err);
 clp_status_t clp_add_command_sub_command(clp_command_t *command, clp_command_t *sub_command, clp_error_t *err);
 
-clp_status_t clp_try_parse_args(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err); /* never exits */
-void         clp_parse_args(clp_command_t *root, char **argv, clp_command_t **command);                   /* exits on error */
+clp_status_t clp_try_parse_args(clp_t *clp, char **argv, clp_command_t **command, clp_error_t *err); /* never exits */
+void         clp_parse_args(clp_t *clp, char **argv, clp_command_t **command);                   /* exits on error */
 void         clp_print_error(FILE *stream, const clp_error_t *err);
 void         clp_print_help(clp_command_t *root);                                                          /* same output as --help, to stdout */
 const char  *clp_status_to_str(clp_status_t code);
 
-void clp_cleanup(clp_command_t *root);         /* frees the tree and everything added to it; never touches dests */
+void clp_cleanup(clp_t *clp);                  /* frees the tree and everything added to it; never touches dests */
 void clp_free_option(clp_option_t *option);    /* only for an option not added to a command (NULL is a no-op) */
 void clp_free_operand(clp_operand_t *operand); /* only for an operand not added to a command (NULL is a no-op) */
 

@@ -340,21 +340,22 @@ clp_status_t clp_insert_operands(clp_command_t *command, const clp_operand_info_
     return CLP_OK;
 }
 
-clp_status_t clp_try_parse_args(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err)
+clp_status_t clp_try_parse_args(clp_t *clp, char **argv, clp_command_t **command, clp_error_t *err)
 {
-    assert(root != NULL);
+    assert(clp != NULL);
+    assert(clp->root != NULL);
     assert(command != NULL);
     assert(argv != NULL && *argv != NULL);
     if (err)
         *err = (clp_error_t){0};
     *command = NULL;
-    return parse(root, argv, command, err);
+    return parse(clp, clp->root, argv, command, err);
 }
 
-void clp_parse_args(clp_command_t *root, char **argv, clp_command_t **command)
+void clp_parse_args(clp_t *clp, char **argv, clp_command_t **command)
 {
     clp_error_t  err;
-    clp_status_t status = clp_try_parse_args(root, argv, command, &err);
+    clp_status_t status = clp_try_parse_args(clp, argv, command, &err);
 
     if (status == CLP_OK)
         return;
@@ -400,7 +401,10 @@ void clp_free_operand(clp_operand_t *operand)
     free_operand(operand);
 }
 
-void clp_cleanup(clp_command_t *root)
+void clp_cleanup(clp_t *clp)
 {
-    free_command(root);
+    if (clp == NULL)
+        return;
+    free_command(clp->root);
+    clp->root = NULL;
 }

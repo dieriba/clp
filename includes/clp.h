@@ -118,11 +118,12 @@
  *       clp_print_error(stderr, &err);
  *       return 1;
  *   }
+ *   clp_t          clp = {.root = root, .author = "me", .description = "my program", .version = "1.0.0"};
  *   clp_command_t *cmd = NULL;
- *   clp_parse_args(root, argv, &cmd);
+ *   clp_parse_args(&clp, argv, &cmd);
  *   if (jobs_opt->value_set) { ... }   // given on the command line, not the default
  *   printf("%s %ld %d\n", file.data, jobs, verbose);
- *   clp_cleanup(root);
+ *   clp_cleanup(&clp);
  *
  * A transform option (no dest; the callback stores through its ctx):
  *   Mode mode = MODE_FAST;                 // default value
@@ -390,6 +391,21 @@ struct clp_command_t
     int             code;
 };
 
+/* The program being parsed: the root of its command tree plus program
+ * metadata (author, description, version).
+ *
+ * clp_t owns the tree under root (released by clp_cleanup) but not its
+ * strings, which must outlive the parse.  Initialise it directly, e.g.
+ *   clp_t clp = {.root = root, .version = "1.0.0"};
+ */
+typedef struct clp_t
+{
+    clp_command_t *root;        /* must not be NULL */
+    const char    *author;      /* may be NULL */
+    const char    *description; /* may be NULL */
+    const char    *version;     /* may be NULL */
+} clp_t;
+
 #define CLP_ERR_MSG_SIZE 1024
 
 struct clp_error_t
@@ -422,7 +438,8 @@ const char *clp_status_to_str(clp_status_t code);
  *   validator   — clp_validator_t run after this command is parsed, or NULL.
  *   ctx         — passed untouched to validator; may be NULL.
  *
- * The returned pointer is owned by the caller.  Pass it to clp_cleanup to
+ * The returned pointer is owned by the caller.  Set it as a clp_t's root (or
+ * add it to a command that is) and pass that clp_t to clp_cleanup to
  * release the command and all its descendant resources.  out and name must not be NULL.
  *
  * Returns CLP_OK, or CLP_ERR_ALLOC.
@@ -616,7 +633,7 @@ clp_status_t clp_new_option_raw(clp_option_t **out, char *long_name, char *short
 clp_status_t clp_new_operand_raw(clp_operand_t **out, char *name, char *description, void *dest, clp_operand_action_t action, clp_type_t type, bool required, clp_checker_t checker,
                                  clp_transform_t transform, clp_error_t *err);
 
-/* Parse argv against the command tree rooted at root.
+/* Parse argv against the command tree rooted at clp->root.
  *
  * argv must be the raw argv from main (argv[0] is the program name).
  * On return, *command points to the deepest dispatched subcommand, or stays
@@ -630,11 +647,11 @@ clp_status_t clp_new_operand_raw(clp_operand_t **out, char *name, char *descript
  * Global options marked on a parent are collected into the matched subcommand
  * after parsing and checked for required status.
  *
- * root, argv, *argv, and command must not be NULL.
+ * clp, clp->root, argv, *argv, and command must not be NULL.
  * Exits on unknown options, type conversion failures, too many operands, or any
  * missing required option/operand; prints usage and a "--help" hint before exiting.
  */
-void clp_parse_args(clp_command_t *root, char **argv, clp_command_t **command);
+void clp_parse_args(clp_t *clp, char **argv, clp_command_t **command);
 
 /* Same as clp_parse_args, but never exits.
  *
@@ -649,9 +666,9 @@ void clp_parse_args(clp_command_t *root, char **argv, clp_command_t **command);
  * that already accepted an argument are not undone; the rejected value itself
  * is never written.  *command may already point to a dispatched subcommand.
  *
- * root, argv, *argv, and command must not be NULL.
+ * clp, clp->root, argv, *argv, and command must not be NULL.
  */
-clp_status_t clp_try_parse_args(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err);
+clp_status_t clp_try_parse_args(clp_t *clp, char **argv, clp_command_t **command, clp_error_t *err);
 
 /* Print the help for root to stdout: the usage line, description, options,
  * subcommands and operands, in the same format "--help" uses.
@@ -721,9 +738,10 @@ clp_status_t clp_kv_init(d_unordered_map_t *map, clp_error_t *err);
 void clp_list_destroy(d_dyn_array_t *list);
 void clp_kv_destroy(d_unordered_map_t *map);
 
-/* Recursively release all resources allocated inside the command tree:
- * root, every subcommand, and every option and operand added to them.
- * root must not be NULL.
+/* Recursively release all resources allocated inside the command tree of
+ * clp: clp->root, every subcommand, and every option and operand added to
+ * them, then set clp->root to NULL.  The clp_t itself and its strings are not
+ * freed.  Passing NULL (or a clp_t whose root is NULL) is a no-op, like free().
  */
-void clp_cleanup(clp_command_t *root);
+void clp_cleanup(clp_t *clp);
 #endif

@@ -230,8 +230,9 @@ void clp_print_help(clp_command_t *root)
     print_command_help(root);
 }
 
-clp_status_t check_help_or_invalid_opt(clp_command_t *root, clp_option_t *opt, char *prefix, const char *name, usize len, clp_error_t *err)
+clp_status_t check_help_or_invalid_opt(clp_t *clp, clp_command_t *root, clp_option_t *opt, char *prefix, const char *name, usize len, clp_error_t *err)
 {
+    (void) clp;
     bool is_long_help  = len == sizeof(HELP_OPT) - 1 && PSEUDO_FAST_STRCMP(name, HELP_OPT);
     bool is_short_help = opt == NULL && prefix[1] == 0 && name[0] == HELP_OPT[0]; // prefix[1] == 0 means short option; only when user has not defined their own -h
     if (is_long_help || is_short_help)
