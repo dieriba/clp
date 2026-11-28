@@ -224,7 +224,7 @@ static void print_command_help(clp_command_t *root)
     }
 }
 
-static void print_help(clp_command_t *root)
+void clp_print_help(clp_command_t *root)
 {
     print_usage_line(stdout, root);
     print_command_help(root);
@@ -236,7 +236,7 @@ clp_status_t check_help_or_invalid_opt(clp_command_t *root, clp_option_t *opt, c
     bool is_short_help = opt == NULL && prefix[1] == 0 && name[0] == HELP_OPT[0]; // prefix[1] == 0 means short option; only when user has not defined their own -h
     if (is_long_help || is_short_help)
     {
-        print_help(root);
+        clp_print_help(root);
         return error_fail(err, CLP_HELP_SHOWN, root, "%s", "");
     }
     if (opt == NULL)

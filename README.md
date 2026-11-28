@@ -56,7 +56,7 @@ An option marked `global=true` is visible to every descendant command. It is reg
 
 ### Built-in help
 
-`--help` and `-h` (when the user has not registered their own `-h`) print the command description, options, subcommands, and operands. `clp_parse_args` then exits with `EXIT_SUCCESS`; `clp_try_parse_args` returns `CLP_HELP_SHOWN`. The name `help` is reserved and cannot be used as a long option name.
+`--help` and `-h` (when the user has not registered their own `-h`) print the command description, options, subcommands, and operands. `clp_parse_args` then exits with `EXIT_SUCCESS`; `clp_try_parse_args` returns `CLP_HELP_SHOWN`. The name `help` is reserved and cannot be used as a long option name. To print the same help yourself (e.g. when no subcommand was given), call `clp_print_help(command)`.
 
 ---
 
@@ -402,6 +402,7 @@ clp_status_t clp_add_command_sub_command(clp_command_t *command, clp_command_t *
 clp_status_t clp_try_parse_args(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err); /* never exits */
 void         clp_parse_args(clp_command_t *root, char **argv, clp_command_t **command);                   /* exits on error */
 void         clp_print_error(FILE *stream, const clp_error_t *err);
+void         clp_print_help(clp_command_t *root);                                                          /* same output as --help, to stdout */
 const char  *clp_status_to_str(clp_status_t code);
 
 void clp_cleanup(clp_command_t *root);         /* frees the tree and everything added to it; never touches dests */

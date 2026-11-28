@@ -653,6 +653,12 @@ void clp_parse_args(clp_command_t *root, char **argv, clp_command_t **command);
  */
 clp_status_t clp_try_parse_args(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err);
 
+/* Print the help for root to stdout: the usage line, description, options,
+ * subcommands and operands, in the same format "--help" uses.
+ * root must not be NULL.
+ */
+void clp_print_help(clp_command_t *root);
+
 /* Print err in the same format clp_parse_args uses before exiting
  * ("clp: <message>", plus the usage line for CLP_ERR_MISSING_REQUIRED).
  * Prints nothing for CLP_OK and CLP_HELP_SHOWN.  stream and err must not be NULL.
