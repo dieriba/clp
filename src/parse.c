@@ -148,6 +148,13 @@ static clp_status_t bind_opt_value(clp_command_t *root, clp_option_t *opt, const
             return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '%s%.*s': %s\n", root->name.data, operand, prefix, (int) len_name, opt_name, err_msg);
         bind(opt->type, &parsed, opt->dest);
         break;
+    case CLP_OPT_ACT_TRIGGER:
+    {
+        const char *trigger_err = opt->transform(opt->dest, NULL);
+        if (trigger_err != NULL)
+            return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: '%s%.*s': %s\n", root->name.data, prefix, (int) len_name, opt_name, trigger_err);
+        break;
+    }
     case CLP_OPT_ACT_COUNT:
         (*(usize *) opt->dest)++;
         break;

@@ -50,16 +50,37 @@ clp_status_t clp_new_command(clp_command_t **out, int code, char *name, char *de
     return CLP_OK;
 }
 
-static const char *check_transform_combination(clp_type_t type, bool is_set, clp_checker_t checker, clp_transform_t transform)
+static const char *check_transform_type(clp_type_t type, clp_checker_t checker, clp_transform_t transform)
 {
     if (transform != NULL && type != CLP_TYPE_CUSTOM)
         return "a transform requires type 'custom'";
     if (transform == NULL && type == CLP_TYPE_CUSTOM)
         return "type 'custom' requires a transform";
-    if (transform != NULL && is_set == false)
-        return "a transform is only allowed with the 'set' action";
     if (transform != NULL && checker != NULL)
         return "a transform cannot be combined with a checker";
+    return NULL;
+}
+
+static const char *check_option_transform_combination(clp_opt_action_t action, clp_type_t type, clp_checker_t checker, clp_transform_t transform)
+{
+    if (action == CLP_OPT_ACT_TRIGGER && type != CLP_TYPE_CUSTOM)
+        return "action 'trigger' requires type 'custom'";
+
+    const char *bad_type = check_transform_type(type, checker, transform);
+    if (bad_type != NULL)
+        return bad_type;
+    if (transform != NULL && action != CLP_OPT_ACT_SET && action != CLP_OPT_ACT_TRIGGER)
+        return "a transform is only allowed with the 'set' or 'trigger' action";
+    return NULL;
+}
+
+static const char *check_operand_transform_combination(clp_operand_action_t action, clp_type_t type, clp_checker_t checker, clp_transform_t transform)
+{
+    const char *bad_type = check_transform_type(type, checker, transform);
+    if (bad_type != NULL)
+        return bad_type;
+    if (transform != NULL && action != CLP_OPERAND_ACT_SET)
+        return "a transform is only allowed with the 'set' action";
     return NULL;
 }
 
@@ -97,7 +118,7 @@ clp_status_t clp_new_option_raw(clp_option_t **out, char *long_name, char *short
                           type_to_str(type));
     }
 
-    const char *bad_combination = check_transform_combination(type, action == CLP_OPT_ACT_SET, checker, transform);
+    const char *bad_combination = check_option_transform_combination(action, type, checker, transform);
     if (bad_combination)
     {
         if (long_name)
@@ -120,7 +141,7 @@ clp_status_t clp_new_option_raw(clp_option_t **out, char *long_name, char *short
     opt->checker     = checker;
     opt->transform   = transform;
     opt->value_set   = false;
-    opt->has_args    = !(type == CLP_TYPE_BOOL || action == CLP_OPT_ACT_COUNT);
+    opt->has_args    = !(type == CLP_TYPE_BOOL || action == CLP_OPT_ACT_COUNT || action == CLP_OPT_ACT_TRIGGER);
     *out             = opt;
     return CLP_OK;
 }
@@ -136,7 +157,7 @@ clp_status_t clp_new_operand_raw(clp_operand_t **out, char *name, char *descript
     if (is_valid_long(d_string_view_from_c_string(name)) == false)
         return error_fail(err, CLP_ERR_INVALID_NAME, NULL, "'--%s' is not a valid option name\n" LONG_NAME_RULE, name);
 
-    const char *bad_combination = check_transform_combination(type, action == CLP_OPERAND_ACT_SET, checker, transform);
+    const char *bad_combination = check_operand_transform_combination(action, type, checker, transform);
     if (bad_combination)
         return error_fail(err, CLP_ERR_INVALID_TYPE, NULL, "operand '<%s>': %s\n", name, bad_combination);
 

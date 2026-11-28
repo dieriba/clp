@@ -4330,6 +4330,122 @@ static void test_validator_with_null_err(void)
     clp_cleanup(root);
 }
 
+/* ── CLP_OPT_ACT_TRIGGER: custom options without an argument ────────────── */
+
+static int         flag_calls;
+static const char *flag_last_arg;
+
+/* counts its calls through ctx; rejects once ctx reaches 3 */
+static const char *bump_flag(void *ctx, const char *arg)
+{
+    int *n = ctx;
+    flag_calls++;
+    flag_last_arg = arg;
+    if (++*n >= 3)
+        return "given too many times";
+    return NULL;
+}
+
+/* trigger requires CLP_TYPE_CUSTOM and a transform; it never takes an argument */
+static void test_trigger_rules(void)
+{
+    clp_error_t   e;
+    clp_option_t *o   = NULL;
+    long          n   = 0;
+    int           ctx = 0;
+
+    D_TEST_EXPR(clp_new_option_raw(&o, "num", NULL, NULL, &n, CLP_OPT_ACT_TRIGGER, CLP_TYPE_LONG, false, false, NULL, NULL, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(o == NULL && e.code == CLP_ERR_INVALID_TYPE);
+    D_TEST_NOT_NULL(strstr(e.message, "action 'trigger' requires type 'custom'"));
+    D_TEST_EXPR(clp_new_option_raw(&o, "f", NULL, NULL, &ctx, CLP_OPT_ACT_TRIGGER, CLP_TYPE_CUSTOM, false, false, NULL, NULL, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_NOT_NULL(strstr(e.message, "type 'custom' requires a transform"));
+    D_TEST_EXPR(clp_new_option_raw(&o, "f", NULL, NULL, &ctx, CLP_OPT_ACT_TRIGGER, CLP_TYPE_CUSTOM, false, false, check_no_dot_str, bump_flag, &e) == CLP_ERR_INVALID_TYPE);
+
+    D_TEST_EXPR(clp_new_option_raw(&o, "f", NULL, NULL, &ctx, CLP_OPT_ACT_TRIGGER, CLP_TYPE_CUSTOM, false, false, NULL, bump_flag, &e) == CLP_OK);
+    D_TEST_EXPR(o->action == CLP_OPT_ACT_TRIGGER && o->has_args == false && o->dest == &ctx);
+    clp_free_option(o);
+
+    /* the macro builds the same thing; a SET transform still takes an argument */
+    o = T_NEW(clp_option_t, clp_new_option_transform_flag, "flood", "f", NULL, bump_flag, &ctx, false, false);
+    D_TEST_EXPR(o->action == CLP_OPT_ACT_TRIGGER && o->type == CLP_TYPE_CUSTOM && o->has_args == false);
+    clp_free_option(o);
+    o = T_NEW(clp_option_t, clp_new_option_transform, "mode", "m", NULL, bump_flag, &ctx, false, false);
+    D_TEST_EXPR(o->action == CLP_OPT_ACT_SET && o->has_args == true);
+    clp_free_option(o);
+}
+
+/* a trigger runs with arg == NULL each time and consumes no argv */
+static void test_trigger_parses(void)
+{
+    clp_error_t     e;
+    int             seen = 0;
+    bool            v    = false;
+    d_string_view_t host = {0};
+    clp_command_t  *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t   *f    = T_NEW(clp_option_t, clp_new_option_transform_flag, "flood", "f", NULL, bump_flag, &seen, false, false);
+    clp_option_t   *vo   = T_NEW(clp_option_t, clp_new_option, "verbose", "v", NULL, &v, false, false);
+    clp_operand_t  *op   = T_NEW(clp_operand_t, clp_new_operand, "host", NULL, &host, true);
+    T_ADD(clp_add_command_option, root, f);
+    T_ADD(clp_add_command_option, root, vo);
+    T_ADD(clp_add_command_operand, root, op);
+
+    char          *argv[] = {"prog", "--flood", "example.com", "-fv", NULL};
+    clp_command_t *cmd    = NULL;
+    flag_calls            = 0;
+    flag_last_arg         = "unset";
+    D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
+    D_TEST_EXPR(flag_calls == 2 && seen == 2 && flag_last_arg == NULL);
+    D_TEST_EXPR(f->value_set == true && v == true);
+    D_TEST_EXPR(d_string_view_compare_against_c_string(host, "example.com"));
+    clp_cleanup(root);
+}
+
+/* a trigger rejects an inline value, and its own rejection is BAD_VALUE */
+static void test_trigger_errors(void)
+{
+    clp_error_t    e;
+    int            seen = 0;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *f    = T_NEW(clp_option_t, clp_new_option_transform_flag, "flood", "f", NULL, bump_flag, &seen, false, false);
+    T_ADD(clp_add_command_option, root, f);
+    clp_command_t *cmd = NULL;
+
+    char *inline_value[] = {"prog", "--flood=x", NULL};
+    D_TEST_EXPR(clp_try_parse_args(root, inline_value, &cmd, &e) == CLP_ERR_UNEXPECTED_ARG);
+    D_TEST_EXPR(seen == 0);
+
+    char *too_many[] = {"prog", "-fff", NULL};
+    D_TEST_EXPR(clp_try_parse_args(root, too_many, &cmd, &e) == CLP_ERR_BAD_VALUE);
+    D_TEST_EXPR(seen == 3);
+    D_TEST_NOT_NULL(strstr(e.message, "'-f': given too many times"));
+    clp_cleanup(root);
+}
+
+/* clp_insert_opts accepts a trigger row like any other action */
+static void test_insert_opts_trigger(void)
+{
+    clp_error_t    e;
+    int            seen = 0;
+    long           n    = 0;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+
+    clp_option_info_t ok[] = {
+        {"flood", "f", NULL, &seen, CLP_OPT_ACT_TRIGGER, CLP_TYPE_CUSTOM, false, false, NULL, bump_flag},
+        {"num", "n", NULL, &n, CLP_OPT_ACT_SET, CLP_TYPE_LONG, false, false, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_opts(root, ok, 2, &e) == CLP_OK);
+    clp_option_t *f = clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("flood"));
+    D_TEST_NOT_NULL(f);
+    D_TEST_EXPR(f->has_args == false);
+
+    clp_option_info_t bad[] = {
+        {"ttl", NULL, NULL, &n, CLP_OPT_ACT_TRIGGER, CLP_TYPE_LONG, false, false, NULL, NULL},
+    };
+    D_TEST_EXPR(clp_insert_opts(root, bad, 1, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 2);
+    clp_cleanup(root);
+}
+
 int main(void)
 {
     atexit(t_release_dests);
@@ -4547,6 +4663,10 @@ int main(void)
         D_TEST_GENERATE_TEST(test_required_global_checked_when_child_has_no_args),
         D_TEST_GENERATE_TEST(test_child_option_shadows_parent_global),
         D_TEST_GENERATE_TEST(test_non_global_parent_option_unknown_in_child),
+        D_TEST_GENERATE_TEST(test_trigger_rules),
+        D_TEST_GENERATE_TEST(test_trigger_parses),
+        D_TEST_GENERATE_TEST(test_trigger_errors),
+        D_TEST_GENERATE_TEST(test_insert_opts_trigger),
     };
     D_TEST_RUN_TESTS(tests);
     return 0;

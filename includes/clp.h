@@ -30,6 +30,8 @@
  * CLP_OPT_ACT_SET   — stores a single typed value in dest; requires an argument
  *                 unless CLP_TYPE_BOOL (a bool flag sets *dest to true).
  * CLP_OPT_ACT_COUNT — increments *dest (usize) each time the flag appears; no argument.
+ * CLP_OPT_ACT_TRIGGER — CLP_TYPE_CUSTOM only: calls the transform with arg == NULL
+ *                 each time the flag appears; no argument.
  * CLP_OPT_ACT_LIST  — appends comma-separated values to dest, a d_dyn_array_t of d_string_view_t.
  * CLP_OPT_ACT_KV    — inserts key=value pairs (comma-separated) into dest, a
  *                 d_unordered_map_t (d_string_view_t key → d_string_view_t value).
@@ -181,6 +183,9 @@ typedef struct d_unordered_map_t d_unordered_map_t;
  * result through ctx, or nothing at all).  clp only tracks value_set and required.
  * They are SET-only, show <value> in --help and take no checker — the
  * transform does its own validation.
+ * clp_new_option_transform_flag makes a transform option that takes no
+ * argument (CLP_OPT_ACT_TRIGGER): the transform is called with arg == NULL
+ * each time the flag appears, and --help shows no <value>.
  */
 
 /* Map a SET dest pointer to its clp_type_t at compile time; any other pointer type
@@ -228,6 +233,9 @@ typedef struct d_unordered_map_t d_unordered_map_t;
 #define clp_new_option_transform(out, ln, sn, desc, transform, ctx, required, global, err)                                                                                                             \
     clp_new_option_raw(out, ln, sn, desc, (void *) (ctx), CLP_OPT_ACT_SET, CLP_TYPE_CUSTOM, required, global, NULL, transform, err)
 
+#define clp_new_option_transform_flag(out, ln, sn, desc, transform, ctx, required, global, err)                                                                                                        \
+    clp_new_option_raw(out, ln, sn, desc, (void *) (ctx), CLP_OPT_ACT_TRIGGER, CLP_TYPE_CUSTOM, required, global, NULL, transform, err)
+
 #define clp_new_operand_transform(out, name, desc, transform, ctx, required, err)                                                                                                                      \
     clp_new_operand_raw(out, name, desc, (void *) (ctx), CLP_OPERAND_ACT_SET, CLP_TYPE_CUSTOM, required, NULL, transform, err)
 
@@ -247,7 +255,8 @@ typedef enum clp_opt_action_t
     CLP_OPT_ACT_COUNT,
     CLP_OPT_ACT_LIST,
     CLP_OPT_ACT_SET,
-    CLP_OPT_ACT_KV
+    CLP_OPT_ACT_KV,
+    CLP_OPT_ACT_TRIGGER
 } clp_opt_action_t;
 
 typedef enum clp_operand_action_t
@@ -294,6 +303,8 @@ typedef const char *(*clp_checker_t)(const void *value);
  * ctx is the pointer given at registration, passed through untouched (it may
  * be NULL); typically where the parsed result goes, so one transform can be
  * shared by several options.
+ * For a CLP_OPT_ACT_TRIGGER option (clp_new_option_transform_flag) arg is
+ * NULL: the transform runs each time the flag appears.
  * The transform decides what to do with arg: parse it, store the result
  * through ctx (or anywhere else), or ignore it.  clp stores nothing.
  * Return NULL to accept, or a message with static lifetime to reject
@@ -546,7 +557,8 @@ clp_status_t clp_insert_operands(clp_command_t *command, const clp_operand_info_
  *                       and OPTION ACTIONS).  Its initial content is the
  *                       default.  Must outlive parsing.  For CLP_TYPE_CUSTOM it is
  *                       the transform's ctx instead, and may be NULL.
- *   action            — CLP_OPT_ACT_SET | CLP_OPT_ACT_COUNT | CLP_OPT_ACT_LIST | CLP_OPT_ACT_KV.
+ *   action            — CLP_OPT_ACT_SET | CLP_OPT_ACT_COUNT | CLP_OPT_ACT_LIST | CLP_OPT_ACT_KV |
+ *                       CLP_OPT_ACT_TRIGGER.
  *   type              — value type; CLP_OPT_ACT_COUNT requires CLP_TYPE_USIZE.
  *   required          — if true, clp_parse_args exits when the option is absent.
  *   global            — if true, the option is visible in all descendant commands.
@@ -556,7 +568,8 @@ clp_status_t clp_insert_operands(clp_command_t *command, const clp_operand_info_
  *                       NULL disables the check.
  *   transform         — clp_transform_t handed the raw argument instead of the
  *                       built-in conversion.  Required with CLP_TYPE_CUSTOM and
- *                       only allowed with it; then action must be CLP_OPT_ACT_SET,
+ *                       only allowed with it; then action must be CLP_OPT_ACT_SET
+ *                       or CLP_OPT_ACT_TRIGGER (no argument, arg == NULL),
  *                       checker must be NULL and dest is passed to it as ctx.
  *                       NULL for every other type.
  *
@@ -564,8 +577,9 @@ clp_status_t clp_insert_operands(clp_command_t *command, const clp_operand_info_
  * out must not be NULL, nor dest unless type is CLP_TYPE_CUSTOM; at least one of
  * long_name or short_name must not be NULL.
  * Returns CLP_OK, CLP_ERR_INVALID_NAME, CLP_ERR_RESERVED_NAME, CLP_ERR_INVALID_TYPE
- * (CLP_OPT_ACT_COUNT paired with a type other than CLP_TYPE_USIZE, or a transform /
- * CLP_TYPE_CUSTOM combination not allowed above), or CLP_ERR_ALLOC.
+ * (CLP_OPT_ACT_COUNT paired with a type other than CLP_TYPE_USIZE,
+ * CLP_OPT_ACT_TRIGGER without CLP_TYPE_CUSTOM, or a transform / CLP_TYPE_CUSTOM
+ * combination not allowed above), or CLP_ERR_ALLOC.
  */
 clp_status_t clp_new_option_raw(clp_option_t **out, char *long_name, char *short_name, char *description, void *dest, clp_opt_action_t action, clp_type_t type, bool required, bool global,
                                 clp_checker_t checker, clp_transform_t transform, clp_error_t *err);

@@ -91,6 +91,7 @@ The type is deduced from the `dest` pointer at compile time; any other pointer t
 | `CLP_OPT_ACT_COUNT` | `clp_new_option_count` | `usize *`         | increments `*dest` each occurrence; no argument |
 | `CLP_OPT_ACT_LIST`  | `clp_new_option_list`  | `d_dyn_array_t *`     | comma-split into `d_string_view_t` elements         |
 | `CLP_OPT_ACT_KV`    | `clp_new_option_kv`    | `d_unordered_map_t *` | `key=value` pairs, comma-separated              |
+| `CLP_OPT_ACT_TRIGGER` | `clp_new_option_transform_flag` | _(ctx)_ | `CLP_TYPE_CUSTOM` only: calls the transform with `arg == NULL` each occurrence; no argument |
 
 ## Operand actions
 
@@ -336,6 +337,22 @@ clp_new_option_transform(&opt2, "tcp-timestamp", NULL, "TCP timestamp of type FL
 clp_new_operand_transform(&op, "mode", "run mode", parse_mode, &mode, true, &err);
 ```
 
+### Transform flags (no argument)
+
+`clp_new_option_transform_flag` makes a transform option that takes **no argument**, with the action `CLP_OPT_ACT_TRIGGER`: the transform is called with `arg == NULL` each time the flag appears (`-f`, `--flood`, or inside `-fv`), and `--help` shows no `<value>`. `--flood=x` is rejected with `CLP_ERR_UNEXPECTED_ARG`, and a message returned by the transform fails parsing with `CLP_ERR_BAD_VALUE`. `CLP_OPT_ACT_TRIGGER` requires `CLP_TYPE_CUSTOM` and a transform.
+
+```c
+static const char *count_flood(void *ctx, const char *arg)
+{
+    (void) arg; /* always NULL here */
+    ++*(int *) ctx;
+    return NULL;
+}
+
+int flood = 0;
+clp_new_option_transform_flag(&opt, "flood", "f", "flood ping", count_flood, &flood, false, false, &err);
+```
+
 ---
 
 ## Command validators (post-parse)
@@ -423,6 +440,7 @@ clp_new_option_list_checked(out, ln, sn, desc, dest, required, global, checker, 
 clp_new_option_kv_checked  (out, ln, sn, desc, dest, required, global, checker, err)
 
 clp_new_option_transform(out, ln, sn, desc, transform, ctx, required, global, err) /* no dest; ctx → transform */
+clp_new_option_transform_flag(out, ln, sn, desc, transform, ctx, required, global, err) /* same, no argument: arg == NULL */
 ```
 
 ### Operand macros
@@ -489,7 +507,7 @@ clp_status_t clp_new_operand_raw(clp_operand_t **out, char *name, char *descript
                               clp_checker_t checker, clp_transform_t transform, clp_error_t *err);
 ```
 
-A `transform` requires `CLP_TYPE_CUSTOM` (and `CLP_TYPE_CUSTOM` requires a transform), the SET action, and no checker; `dest` is then passed to the transform as its `ctx` and may be `NULL`. Any other combination returns `CLP_ERR_INVALID_TYPE`.
+A `transform` requires `CLP_TYPE_CUSTOM` (and `CLP_TYPE_CUSTOM` requires a transform), the SET or TRIGGER action, and no checker; `dest` is then passed to the transform as its `ctx` and may be `NULL`. Any other combination returns `CLP_ERR_INVALID_TYPE`.
 
 ---
 
@@ -505,7 +523,7 @@ Builders and `clp_try_parse_args` never exit: they return a `clp_status_t` and f
 | Short option name is not alphanumeric or `?`                       | `CLP_ERR_INVALID_NAME`                 |
 | Long option name is `"help"` (reserved)                            | `CLP_ERR_RESERVED_NAME`                |
 | `CLP_OPT_ACT_COUNT` paired with a type other than `CLP_TYPE_USIZE`         | `CLP_ERR_INVALID_TYPE`                 |
-| Transform / `CLP_TYPE_CUSTOM` / checker combination not allowed        | `CLP_ERR_INVALID_TYPE`                 |
+| Transform / `CLP_TYPE_CUSTOM` / checker combination not allowed, or `CLP_OPT_ACT_TRIGGER` without `CLP_TYPE_CUSTOM` | `CLP_ERR_INVALID_TYPE`                 |
 | Duplicate long or short option name on the same command            | `CLP_ERR_DUPLICATE`                    |
 | Command would have both operands and subcommands                   | `CLP_ERR_CONFLICT`                     |
 | Required operand registered after an optional one                  | `CLP_ERR_OPERAND_ORDER`                |
