@@ -9,9 +9,9 @@
 
 #include <stdlib.h>
 
-/* ── builder shim: builders return ClpStatus; tests treat failure as fatal ─ */
+/* ── builder shim: builders return clp_status_t; tests treat failure as fatal ─ */
 
-static void t_die(const ClpError *e)
+static void t_die(const clp_error_t *e)
 {
     clp_print_error(stderr, e);
     exit(EXIT_FAILURE);
@@ -19,8 +19,8 @@ static void t_die(const ClpError *e)
 
 #define T_NEW(T, ctor, ...)                                                                                                                                                                            \
     ({                                                                                                                                                                                                 \
-        T       *t_out_;                                                                                                                                                                               \
-        ClpError t_err_;                                                                                                                                                                               \
+        T          *t_out_;                                                                                                                                                                            \
+        clp_error_t t_err_;                                                                                                                                                                            \
         if (ctor(&t_out_, __VA_ARGS__, &t_err_) != CLP_OK)                                                                                                                                             \
             t_die(&t_err_);                                                                                                                                                                            \
         t_out_;                                                                                                                                                                                        \
@@ -28,40 +28,40 @@ static void t_die(const ClpError *e)
 
 #define T_ADD(fn, ...)                                                                                                                                                                                 \
     ({                                                                                                                                                                                                 \
-        ClpError t_err_;                                                                                                                                                                               \
+        clp_error_t t_err_;                                                                                                                                                                            \
         if (fn(__VA_ARGS__, &t_err_) != CLP_OK)                                                                                                                                                        \
             t_die(&t_err_);                                                                                                                                                                            \
     })
 
 /* ── dest storage: clp writes into caller-owned variables ───────────────
  *
- * Tests read parsed values back through TV(x), a TestValue owned by the test.
- * The t_new_* shims keep the pre-dest argument lists (type / default Value) so
+ * Tests read parsed values back through TV(x), a test_value_t owned by the test.
+ * The t_new_* shims keep the pre-dest argument lists (type / default clp_value_t) so
  * the bulk of the suite reads as before; the real typed macros are covered by
  * the "dest binding" tests further down. */
 
-typedef union TestValue
+typedef union test_value_t
 {
-    DUnorderedMap value_kv;
-    DDynArray     value_list;
-    DStringView   value_d_string_view;
-    usize         value_usize;
-    double        value_double;
-    long          value_long;
-    bool          value_bool;
-    char          value_char;
-} TestValue;
+    d_unordered_map_t value_kv;
+    d_dyn_array_t     value_list;
+    d_string_view_t   value_d_string_view;
+    usize             value_usize;
+    double            value_double;
+    long              value_long;
+    bool              value_bool;
+    char              value_char;
+} test_value_t;
 
 #define T_MAX_DESTS 1024
 
 static struct
 {
-    TestValue value;
-    int       kind; /* 0 scalar, 1 list, 2 kv */
+    test_value_t value;
+    int          kind; /* 0 scalar, 1 list, 2 kv */
 } t_dests[T_MAX_DESTS];
 static usize t_dests_count;
 
-#define TV(x) (*(TestValue *) (x)->dest)
+#define TV(x) (*(test_value_t *) (x)->dest)
 
 static void t_release_dests(void)
 {
@@ -76,24 +76,24 @@ static void t_release_dests(void)
 }
 
 /* kind: 0 scalar (filled from def), 1 list, 2 kv */
-static TestValue *t_dest(int kind, Value def)
+static test_value_t *t_dest(int kind, clp_value_t def)
 {
     if (t_dests_count == T_MAX_DESTS)
     {
         fprintf(stderr, "test: T_MAX_DESTS exhausted\n");
         exit(EXIT_FAILURE);
     }
-    TestValue *tv = &t_dests[t_dests_count].value;
+    test_value_t *tv = &t_dests[t_dests_count].value;
     memset(tv, 0, sizeof(*tv));
     t_dests[t_dests_count++].kind = kind;
     if (kind == 1)
     {
-        if (d_dyn_array_init(&tv->value_list, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
+        if (d_dyn_array_init(&tv->value_list, sizeof(d_string_view_t), 1, NULL, NULL, RAW_BUF_OPT_NONE) != D_OK)
             exit(EXIT_FAILURE);
     }
     else if (kind == 2)
     {
-        if (d_unordered_map_init_not_owned_d_string_view_key(&tv->value_kv, sizeof(DStringView), 1, NULL))
+        if (d_unordered_map_init_not_owned_d_string_view_key(&tv->value_kv, sizeof(d_string_view_t), 1, NULL))
             exit(EXIT_FAILURE);
     }
     else
@@ -101,78 +101,81 @@ static TestValue *t_dest(int kind, Value def)
     return tv;
 }
 
-static ClpStatus t_new_option_raw(Option **out, char *ln, char *sn, char *desc, bool has_def, OptAction action, Value def, Type type, bool req, bool glob, ClpChecker checker, ClpError *err)
+static clp_status_t t_new_option_raw(clp_option_t **out, char *ln, char *sn, char *desc, bool has_def, clp_opt_action_t action, clp_value_t def, clp_type_t type, bool req, bool glob,
+                                     clp_checker_t checker, clp_error_t *err)
 {
-    int kind = (!has_def && action == OPT_ACT_LIST) ? 1 : (!has_def && action == OPT_ACT_KV) ? 2 : 0;
+    int kind = (!has_def && action == CLP_OPT_ACT_LIST) ? 1 : (!has_def && action == CLP_OPT_ACT_KV) ? 2 : 0;
     return clp_new_option_raw(out, ln, sn, desc, t_dest(kind, def), action, type, req, glob, checker, NULL, err);
 }
 
-static ClpStatus t_new_operand_raw(Operand **out, char *name, char *desc, bool has_def, OperandAction action, Value def, Type type, bool req, ClpChecker checker, ClpError *err)
+static clp_status_t t_new_operand_raw(clp_operand_t **out, char *name, char *desc, bool has_def, clp_operand_action_t action, clp_value_t def, clp_type_t type, bool req, clp_checker_t checker,
+                                      clp_error_t *err)
 {
-    int kind = (!has_def && action == OPERAND_ACT_LIST) ? 1 : (!has_def && action == OPERAND_ACT_KV) ? 2 : 0;
+    int kind = (!has_def && action == CLP_OPERAND_ACT_LIST) ? 1 : (!has_def && action == CLP_OPERAND_ACT_KV) ? 2 : 0;
     return clp_new_operand_raw(out, name, desc, t_dest(kind, def), action, type, req, checker, NULL, err);
 }
 
-#define t_new_option(out, ln, sn, desc, type, req, glob, err) t_new_option_raw(out, ln, sn, desc, false, OPT_ACT_SET, (Value) {0}, type, req, glob, NULL, err)
-#define t_new_option_checked(out, ln, sn, desc, type, req, glob, chk, err) t_new_option_raw(out, ln, sn, desc, false, OPT_ACT_SET, (Value) {0}, type, req, glob, chk, err)
-#define t_new_option_count(out, ln, sn, desc, glob, err) t_new_option_raw(out, ln, sn, desc, false, OPT_ACT_COUNT, (Value) {0}, TYPE_USIZE, false, glob, NULL, err)
-#define t_new_option_list(out, ln, sn, desc, req, glob, err) t_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, req, glob, NULL, err)
-#define t_new_option_list_checked(out, ln, sn, desc, req, glob, chk, err) t_new_option_raw(out, ln, sn, desc, false, OPT_ACT_LIST, (Value) {0}, TYPE_STR, req, glob, chk, err)
-#define t_new_option_kv(out, ln, sn, desc, req, glob, err) t_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, req, glob, NULL, err)
-#define t_new_option_kv_checked(out, ln, sn, desc, req, glob, chk, err) t_new_option_raw(out, ln, sn, desc, false, OPT_ACT_KV, (Value) {0}, TYPE_STR, req, glob, chk, err)
+#define t_new_option(out, ln, sn, desc, type, req, glob, err) t_new_option_raw(out, ln, sn, desc, false, CLP_OPT_ACT_SET, (clp_value_t){0}, type, req, glob, NULL, err)
+#define t_new_option_checked(out, ln, sn, desc, type, req, glob, chk, err) t_new_option_raw(out, ln, sn, desc, false, CLP_OPT_ACT_SET, (clp_value_t){0}, type, req, glob, chk, err)
+#define t_new_option_count(out, ln, sn, desc, glob, err) t_new_option_raw(out, ln, sn, desc, false, CLP_OPT_ACT_COUNT, (clp_value_t){0}, CLP_TYPE_USIZE, false, glob, NULL, err)
+#define t_new_option_list(out, ln, sn, desc, req, glob, err) t_new_option_raw(out, ln, sn, desc, false, CLP_OPT_ACT_LIST, (clp_value_t){0}, CLP_TYPE_STR, req, glob, NULL, err)
+#define t_new_option_list_checked(out, ln, sn, desc, req, glob, chk, err) t_new_option_raw(out, ln, sn, desc, false, CLP_OPT_ACT_LIST, (clp_value_t){0}, CLP_TYPE_STR, req, glob, chk, err)
+#define t_new_option_kv(out, ln, sn, desc, req, glob, err) t_new_option_raw(out, ln, sn, desc, false, CLP_OPT_ACT_KV, (clp_value_t){0}, CLP_TYPE_STR, req, glob, NULL, err)
+#define t_new_option_kv_checked(out, ln, sn, desc, req, glob, chk, err) t_new_option_raw(out, ln, sn, desc, false, CLP_OPT_ACT_KV, (clp_value_t){0}, CLP_TYPE_STR, req, glob, chk, err)
 #define t_new_option_default_usize_checked(out, ln, sn, desc, def, req, glob, chk, err)                                                                                                                \
-    t_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_usize = (def)}, TYPE_USIZE, req, glob, chk, err)
+    t_new_option_raw(out, ln, sn, desc, true, CLP_OPT_ACT_SET, (clp_value_t){.value_usize = (def)}, CLP_TYPE_USIZE, req, glob, chk, err)
 #define t_new_option_default_str_checked(out, ln, sn, desc, def, req, glob, chk, err)                                                                                                                  \
-    t_new_option_raw(out, ln, sn, desc, true, OPT_ACT_SET, (Value) {.value_d_string_view = d_string_view_from_c_string(def)}, TYPE_STR, req, glob, chk, err)
+    t_new_option_raw(out, ln, sn, desc, true, CLP_OPT_ACT_SET, (clp_value_t){.value_d_string_view = d_string_view_from_c_string(def)}, CLP_TYPE_STR, req, glob, chk, err)
 
-#define t_new_operand(out, name, desc, type, req, err) t_new_operand_raw(out, name, desc, false, OPERAND_ACT_SET, (Value) {0}, type, req, NULL, err)
-#define t_new_operand_checked(out, name, desc, type, req, chk, err) t_new_operand_raw(out, name, desc, false, OPERAND_ACT_SET, (Value) {0}, type, req, chk, err)
-#define t_new_operand_default_long_checked(out, name, desc, def, req, chk, err) t_new_operand_raw(out, name, desc, true, OPERAND_ACT_SET, (Value) {.value_long = (def)}, TYPE_LONG, req, chk, err)
-#define t_new_operand_list(out, name, desc, req, err) t_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, req, NULL, err)
-#define t_new_operand_list_checked(out, name, desc, req, chk, err) t_new_operand_raw(out, name, desc, false, OPERAND_ACT_LIST, (Value) {0}, TYPE_STR, req, chk, err)
-#define t_new_operand_kv(out, name, desc, req, err) t_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, req, NULL, err)
-#define t_new_operand_kv_checked(out, name, desc, req, chk, err) t_new_operand_raw(out, name, desc, false, OPERAND_ACT_KV, (Value) {0}, TYPE_STR, req, chk, err)
+#define t_new_operand(out, name, desc, type, req, err) t_new_operand_raw(out, name, desc, false, CLP_OPERAND_ACT_SET, (clp_value_t){0}, type, req, NULL, err)
+#define t_new_operand_checked(out, name, desc, type, req, chk, err) t_new_operand_raw(out, name, desc, false, CLP_OPERAND_ACT_SET, (clp_value_t){0}, type, req, chk, err)
+#define t_new_operand_default_long_checked(out, name, desc, def, req, chk, err)                                                                                                                        \
+    t_new_operand_raw(out, name, desc, true, CLP_OPERAND_ACT_SET, (clp_value_t){.value_long = (def)}, CLP_TYPE_LONG, req, chk, err)
+#define t_new_operand_list(out, name, desc, req, err) t_new_operand_raw(out, name, desc, false, CLP_OPERAND_ACT_LIST, (clp_value_t){0}, CLP_TYPE_STR, req, NULL, err)
+#define t_new_operand_list_checked(out, name, desc, req, chk, err) t_new_operand_raw(out, name, desc, false, CLP_OPERAND_ACT_LIST, (clp_value_t){0}, CLP_TYPE_STR, req, chk, err)
+#define t_new_operand_kv(out, name, desc, req, err) t_new_operand_raw(out, name, desc, false, CLP_OPERAND_ACT_KV, (clp_value_t){0}, CLP_TYPE_STR, req, NULL, err)
+#define t_new_operand_kv_checked(out, name, desc, req, chk, err) t_new_operand_raw(out, name, desc, false, CLP_OPERAND_ACT_KV, (clp_value_t){0}, CLP_TYPE_STR, req, chk, err)
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 
-static Option *init_bool_opt(char *lng, char *sht, bool required)
+static clp_option_t *init_bool_opt(char *lng, char *sht, bool required)
 {
-    return T_NEW(Option, t_new_option, lng, sht, NULL, TYPE_BOOL, required, false);
+    return T_NEW(clp_option_t, t_new_option, lng, sht, NULL, CLP_TYPE_BOOL, required, false);
 }
 
-static Option *init_str_opt(char *lng, char *sht, bool required)
+static clp_option_t *init_str_opt(char *lng, char *sht, bool required)
 {
-    return T_NEW(Option, t_new_option, lng, sht, NULL, TYPE_STR, required, false);
+    return T_NEW(clp_option_t, t_new_option, lng, sht, NULL, CLP_TYPE_STR, required, false);
 }
 
-static Option *init_count_opt(char *lng, char *sht)
+static clp_option_t *init_count_opt(char *lng, char *sht)
 {
-    return T_NEW(Option, t_new_option_count, lng, sht, NULL, false);
+    return T_NEW(clp_option_t, t_new_option_count, lng, sht, NULL, false);
 }
 
-static Option *init_list_opt(char *lng, char *sht)
+static clp_option_t *init_list_opt(char *lng, char *sht)
 {
-    return T_NEW(Option, t_new_option_list, lng, sht, NULL, false, false);
+    return T_NEW(clp_option_t, t_new_option_list, lng, sht, NULL, false, false);
 }
 
-static Operand *init_str_operand(char *name, bool required)
+static clp_operand_t *init_str_operand(char *name, bool required)
 {
-    return T_NEW(Operand, t_new_operand, name, NULL, TYPE_STR, required);
+    return T_NEW(clp_operand_t, t_new_operand, name, NULL, CLP_TYPE_STR, required);
 }
 
-static Operand *init_list_operand(char *name, bool required)
+static clp_operand_t *init_list_operand(char *name, bool required)
 {
-    return T_NEW(Operand, t_new_operand_list, name, NULL, required);
+    return T_NEW(clp_operand_t, t_new_operand_list, name, NULL, required);
 }
 
-static Option *init_kv_opt(char *lng, char *sht)
+static clp_option_t *init_kv_opt(char *lng, char *sht)
 {
-    return T_NEW(Option, t_new_option_kv, lng, sht, NULL, false, false);
+    return T_NEW(clp_option_t, t_new_option_kv, lng, sht, NULL, false, false);
 }
 
-static Operand *init_kv_operand(char *name, bool required)
+static clp_operand_t *init_kv_operand(char *name, bool required)
 {
-    return T_NEW(Operand, t_new_operand_kv, name, NULL, required);
+    return T_NEW(clp_operand_t, t_new_operand_kv, name, NULL, required);
 }
 
 /* ── fork/pipe helper (used by null-guard and error tests) ──────────────── */
@@ -182,9 +185,9 @@ typedef struct
     int  status;
     char err[512];
     char out[1024];
-} ChildResult;
+} child_result_t;
 
-static ChildResult run_child(void (*fn)(void))
+static child_result_t run_child(void (*fn)(void))
 {
     int pfd[2];
     pipe(pfd);
@@ -198,8 +201,8 @@ static ChildResult run_child(void (*fn)(void))
         _exit(0);
     }
     close(pfd[1]);
-    ChildResult r     = {0};
-    ssize_t     total = 0, n;
+    child_result_t r     = {0};
+    ssize_t        total = 0, n;
     while ((n = read(pfd[0], r.err + total, sizeof(r.err) - 1 - total)) > 0)
         total += n;
     r.err[total] = '\0';
@@ -210,7 +213,7 @@ static ChildResult run_child(void (*fn)(void))
     return r;
 }
 
-static ChildResult run_child_stdout(void (*fn)(void))
+static child_result_t run_child_stdout(void (*fn)(void))
 {
     int pfd[2];
     pipe(pfd);
@@ -224,8 +227,8 @@ static ChildResult run_child_stdout(void (*fn)(void))
         _exit(0);
     }
     close(pfd[1]);
-    ChildResult r     = {0};
-    ssize_t     total = 0, n;
+    child_result_t r     = {0};
+    ssize_t        total = 0, n;
     while ((n = read(pfd[0], r.out + total, sizeof(r.out) - 1 - total)) > 0)
         total += n;
     r.out[total] = '\0';
@@ -240,9 +243,9 @@ static ChildResult run_child_stdout(void (*fn)(void))
 
 static void test_get_option_by_short_finds_registered_option(void)
 {
-    Command *cmd;
-    Option  *opt;
-    cmd = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *cmd;
+    clp_option_t  *opt;
+    cmd = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     opt = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, cmd, opt);
     D_TEST_EXPR(clp_get_option_by_short(cmd, 'v') == opt);
@@ -251,9 +254,9 @@ static void test_get_option_by_short_finds_registered_option(void)
 
 static void test_get_option_by_short_returns_null_for_unknown(void)
 {
-    Command *cmd;
-    Option  *opt;
-    cmd = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *cmd;
+    clp_option_t  *opt;
+    cmd = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     opt = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, cmd, opt);
     D_TEST_NULL(clp_get_option_by_short(cmd, 'x'));
@@ -262,9 +265,9 @@ static void test_get_option_by_short_returns_null_for_unknown(void)
 
 static void test_get_option_by_long_finds_registered_option(void)
 {
-    Command *cmd;
-    Option  *opt;
-    cmd = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *cmd;
+    clp_option_t  *opt;
+    cmd = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     opt = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, cmd, opt);
     D_TEST_EXPR(clp_get_option_by_long(cmd, D_STRING_VIEW_FROM_LITERAL("verbose")) == opt);
@@ -273,9 +276,9 @@ static void test_get_option_by_long_finds_registered_option(void)
 
 static void test_get_option_by_long_returns_null_for_unknown(void)
 {
-    Command *cmd;
-    Option  *opt;
-    cmd = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *cmd;
+    clp_option_t  *opt;
+    cmd = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     opt = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, cmd, opt);
     D_TEST_NULL(clp_get_option_by_long(cmd, D_STRING_VIEW_FROM_LITERAL("quiet")));
@@ -284,10 +287,10 @@ static void test_get_option_by_long_returns_null_for_unknown(void)
 
 static void test_get_operand_finds_registered_operand(void)
 {
-    Command *cmd;
-    Operand *op;
-    cmd = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    op = init_str_operand("file", false);
+    clp_command_t *cmd;
+    clp_operand_t *op;
+    cmd = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    op  = init_str_operand("file", false);
     T_ADD(clp_add_command_operand, cmd, op);
     D_TEST_EXPR(clp_get_operand(cmd, D_STRING_VIEW_FROM_LITERAL("file")) == op);
     clp_cleanup(cmd);
@@ -295,10 +298,10 @@ static void test_get_operand_finds_registered_operand(void)
 
 static void test_get_operand_returns_null_for_unknown(void)
 {
-    Command *cmd;
-    Operand *op;
-    cmd = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    op = init_str_operand("file", false);
+    clp_command_t *cmd;
+    clp_operand_t *op;
+    cmd = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    op  = init_str_operand("file", false);
     T_ADD(clp_add_command_operand, cmd, op);
     D_TEST_NULL(clp_get_operand(cmd, D_STRING_VIEW_FROM_LITERAL("output")));
     clp_cleanup(cmd);
@@ -308,14 +311,14 @@ static void test_get_operand_returns_null_for_unknown(void)
 
 static void test_long_bool_flag_sets_value(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", "--verbose", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--verbose", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == true);
     D_TEST_EXPR(TV(verbose).value_bool == true);
@@ -324,14 +327,14 @@ static void test_long_bool_flag_sets_value(void)
 
 static void test_short_bool_flag_sets_value(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", "-v", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == true);
     D_TEST_EXPR(TV(verbose).value_bool == true);
@@ -340,14 +343,14 @@ static void test_short_bool_flag_sets_value(void)
 
 static void test_unprovided_optional_bool_stays_unset(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == false);
     D_TEST_EXPR(TV(verbose).value_bool == false);
@@ -357,9 +360,9 @@ static void test_unprovided_optional_bool_stays_unset(void)
 /* POSIX: multiple bool flags combined in one token: -abc */
 static void test_combined_short_bool_flags(void)
 {
-    Command *root;
-    Option  *fa, *fb, *fc;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *fa, *fb, *fc;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     fa   = init_bool_opt("aaa", "a", false);
     fb   = init_bool_opt("bbb", "b", false);
     fc   = init_bool_opt("ccc", "c", false);
@@ -367,8 +370,8 @@ static void test_combined_short_bool_flags(void)
     T_ADD(clp_add_command_option, root, fb);
     T_ADD(clp_add_command_option, root, fc);
 
-    char    *argv[] = {"prog", "-abc", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-abc", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(fa->value_set == true);
     D_TEST_EXPR(fb->value_set == true);
@@ -382,16 +385,16 @@ static void test_combined_short_bool_flags(void)
 /* Parsing multiple separate bool flags */
 static void test_multiple_separate_short_bool_flags(void)
 {
-    Command *root;
-    Option  *fa, *fb;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *fa, *fb;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     fa   = init_bool_opt("aaa", "a", false);
     fb   = init_bool_opt("bbb", "b", false);
     T_ADD(clp_add_command_option, root, fa);
     T_ADD(clp_add_command_option, root, fb);
 
-    char    *argv[] = {"prog", "-a", "-b", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-a", "-b", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(fa->value_set == true);
     D_TEST_EXPR(fb->value_set == true);
@@ -401,16 +404,16 @@ static void test_multiple_separate_short_bool_flags(void)
 /* Only first flag in combined token is set when second is unknown */
 static void test_combined_flags_only_set_found_options(void)
 {
-    Command *root;
-    Option  *fa, *fb;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *fa, *fb;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     fa   = init_bool_opt("aaa", "a", false);
     fb   = init_bool_opt("bbb", "b", false);
     T_ADD(clp_add_command_option, root, fa);
     T_ADD(clp_add_command_option, root, fb);
 
-    char    *argv[] = {"prog", "-a", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-a", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(fa->value_set == true);
     D_TEST_EXPR(fb->value_set == false);
@@ -422,14 +425,14 @@ static void test_combined_flags_only_set_found_options(void)
 /* POSIX: -oVALUE (value is remainder of token, no space) */
 static void test_short_opt_inline_value(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     output = init_str_opt("output", "o", false);
     T_ADD(clp_add_command_option, root, output);
 
-    char    *argv[] = {"prog", "-ofile.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-ofile.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(output->value_set == true);
     D_TEST_STR_EQ(TV(output).value_d_string_view.data, "file.txt");
@@ -439,14 +442,14 @@ static void test_short_opt_inline_value(void)
 /* POSIX: -o VALUE (value is next argv token) */
 static void test_short_opt_next_argv_value(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     output = init_str_opt("output", "o", false);
     T_ADD(clp_add_command_option, root, output);
 
-    char    *argv[] = {"prog", "-o", "file.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-o", "file.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(output->value_set == true);
     D_TEST_STR_EQ(TV(output).value_d_string_view.data, "file.txt");
@@ -456,14 +459,14 @@ static void test_short_opt_next_argv_value(void)
 /* GNU: --output=VALUE */
 static void test_long_opt_inline_eq_value(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     output = init_str_opt("output", "o", false);
     T_ADD(clp_add_command_option, root, output);
 
-    char    *argv[] = {"prog", "--output=file.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--output=file.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(output->value_set == true);
     D_TEST_STR_EQ(TV(output).value_d_string_view.data, "file.txt");
@@ -473,14 +476,14 @@ static void test_long_opt_inline_eq_value(void)
 /* GNU: --output VALUE */
 static void test_long_opt_next_argv_value(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     output = init_str_opt("output", "o", false);
     T_ADD(clp_add_command_option, root, output);
 
-    char    *argv[] = {"prog", "--output", "file.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--output", "file.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(output->value_set == true);
     D_TEST_STR_EQ(TV(output).value_d_string_view.data, "file.txt");
@@ -490,9 +493,9 @@ static void test_long_opt_next_argv_value(void)
 /* POSIX: -abVALUE — combined bools followed by value-taking option inline */
 static void test_combined_bools_then_inline_value_opt(void)
 {
-    Command *root;
-    Option  *fa, *fb, *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *fa, *fb, *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     fa     = init_bool_opt("aaa", "a", false);
     fb     = init_bool_opt("bbb", "b", false);
     output = init_str_opt("output", "o", false);
@@ -500,8 +503,8 @@ static void test_combined_bools_then_inline_value_opt(void)
     T_ADD(clp_add_command_option, root, fb);
     T_ADD(clp_add_command_option, root, output);
 
-    char    *argv[] = {"prog", "-abofile.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-abofile.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(fa->value_set == true);
     D_TEST_EXPR(fb->value_set == true);
@@ -514,14 +517,14 @@ static void test_combined_bools_then_inline_value_opt(void)
 
 static void test_count_option_increments_once(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_count_opt("verbose", "v");
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", "-v", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(TV(verbose).value_usize == 1);
     clp_cleanup(root);
@@ -529,14 +532,14 @@ static void test_count_option_increments_once(void)
 
 static void test_count_option_increments_multiple_times(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_count_opt("verbose", "v");
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", "-v", "-v", "-v", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "-v", "-v", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(TV(verbose).value_usize == 3);
     clp_cleanup(root);
@@ -545,14 +548,14 @@ static void test_count_option_increments_multiple_times(void)
 /* POSIX: -vvv combined should count 3 */
 static void test_count_option_combined_short(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_count_opt("verbose", "v");
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", "-vvv", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-vvv", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(TV(verbose).value_usize == 3);
     clp_cleanup(root);
@@ -560,14 +563,14 @@ static void test_count_option_combined_short(void)
 
 static void test_count_option_mixed_short_and_long(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_count_opt("verbose", "v");
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", "-v", "--verbose", "-vv", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "--verbose", "-vv", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(TV(verbose).value_usize == 4);
     clp_cleanup(root);
@@ -577,14 +580,14 @@ static void test_count_option_mixed_short_and_long(void)
 
 static void test_list_option_single_entry(void)
 {
-    Command *root;
-    Option  *files;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *files;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     files = init_list_opt("files", "f");
     T_ADD(clp_add_command_option, root, files);
 
-    char    *argv[] = {"prog", "--files", "a.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--files", "a.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(files->value_set == true);
     D_TEST_EXPR(d_dyn_array_get_size(&TV(files).value_list) == 1);
@@ -593,19 +596,19 @@ static void test_list_option_single_entry(void)
 
 static void test_list_option_comma_separated(void)
 {
-    Command *root;
-    Option  *files;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *files;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     files = init_list_opt("files", "f");
     T_ADD(clp_add_command_option, root, files);
 
-    char    *argv[] = {"prog", "--files", "a.txt,b.txt,c.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--files", "a.txt,b.txt,c.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(files->value_set == true);
     D_TEST_EXPR(d_dyn_array_get_size(&TV(files).value_list) == 3);
 
-    DStringView tok;
+    d_string_view_t tok;
     D_TEST_EXPR(d_dyn_array_get_elem_at(&TV(files).value_list, 0, &tok) == D_OK);
     D_TEST_EXPR(d_string_view_compare_against_c_string(tok, "a.txt"));
     D_TEST_EXPR(d_dyn_array_get_elem_at(&TV(files).value_list, 1, &tok) == D_OK);
@@ -619,14 +622,14 @@ static void test_list_option_comma_separated(void)
 
 static void test_single_operand_is_set(void)
 {
-    Command *root;
-    Operand *file;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *file;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     file = init_str_operand("file", false);
     T_ADD(clp_add_command_operand, root, file);
 
-    char    *argv[] = {"prog", "input.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "input.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(file->value_set == true);
     D_TEST_STR_EQ(TV(file).value_d_string_view.data, "input.txt");
@@ -635,17 +638,17 @@ static void test_single_operand_is_set(void)
 
 static void test_options_and_operand_together(void)
 {
-    Command *root;
-    Option  *verbose;
-    Operand *file;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    clp_operand_t *file;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
-    file = init_str_operand("file", false);
+    file    = init_str_operand("file", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_operand, root, file);
 
-    char    *argv[] = {"prog", "-v", "input.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "input.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == true);
     D_TEST_EXPR(file->value_set == true);
@@ -655,17 +658,17 @@ static void test_options_and_operand_together(void)
 /* GNU: options can appear after operands (non-POSIX scanning) */
 static void test_option_after_operand(void)
 {
-    Command *root;
-    Option  *verbose;
-    Operand *file;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    clp_operand_t *file;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
-    file = init_str_operand("file", false);
+    file    = init_str_operand("file", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_operand, root, file);
 
-    char    *argv[] = {"prog", "input.txt", "-v", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "input.txt", "-v", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(file->value_set == true);
     D_TEST_EXPR(verbose->value_set == true);
@@ -674,16 +677,16 @@ static void test_option_after_operand(void)
 
 static void test_multiple_operands(void)
 {
-    Command *root;
-    Operand *src, *dst;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    src = init_str_operand("src", false);
-    dst = init_str_operand("dst", false);
+    clp_command_t *root;
+    clp_operand_t *src, *dst;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    src  = init_str_operand("src", false);
+    dst  = init_str_operand("dst", false);
     T_ADD(clp_add_command_operand, root, src);
     T_ADD(clp_add_command_operand, root, dst);
 
-    char    *argv[] = {"prog", "a.txt", "b.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "a.txt", "b.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(src->value_set == true);
     D_TEST_EXPR(dst->value_set == true);
@@ -695,17 +698,17 @@ static void test_multiple_operands(void)
 /* POSIX/GNU: -- terminates option parsing; everything after is an operand */
 static void test_double_hyphen_terminates_option_parsing(void)
 {
-    Command *root;
-    Option  *verbose;
-    Operand *file;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    clp_operand_t *file;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
-    file = init_str_operand("file", false);
+    file    = init_str_operand("file", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_operand, root, file);
 
-    char    *argv[] = {"prog", "--", "--verbose", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--", "--verbose", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == false);
     D_TEST_EXPR(file->value_set == true);
@@ -715,17 +718,17 @@ static void test_double_hyphen_terminates_option_parsing(void)
 
 static void test_double_hyphen_with_options_before(void)
 {
-    Command *root;
-    Option  *verbose;
-    Operand *file;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    clp_operand_t *file;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
-    file = init_str_operand("file", false);
+    file    = init_str_operand("file", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_operand, root, file);
 
-    char    *argv[] = {"prog", "-v", "--", "file.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "--", "file.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == true);
     D_TEST_EXPR(file->value_set == true);
@@ -737,14 +740,14 @@ static void test_double_hyphen_with_options_before(void)
 
 static void test_list_operand_consumes_remaining_args(void)
 {
-    Command *root;
-    Operand *files;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *files;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     files = init_list_operand("files", false);
     T_ADD(clp_add_command_operand, root, files);
 
-    char    *argv[] = {"prog", "a.txt", "b.txt", "c.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "a.txt", "b.txt", "c.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(files->value_set == true);
     D_TEST_EXPR(d_dyn_array_get_size(&TV(files).value_list) == 3);
@@ -755,13 +758,13 @@ static void test_list_operand_consumes_remaining_args(void)
 
 static void test_subcommand_is_dispatched(void)
 {
-    Command *root, *add;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
+    clp_command_t *root, *add;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add  = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, add);
 
-    char    *argv[] = {"prog", "add", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "add", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     clp_cleanup(root);
@@ -769,16 +772,16 @@ static void test_subcommand_is_dispatched(void)
 
 static void test_subcommand_with_own_option(void)
 {
-    Command *root, *commit;
-    Option  *msg;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    commit = T_NEW(Command, clp_new_command, 1, "commit", NULL, NULL, NULL);
+    clp_command_t *root, *commit;
+    clp_option_t  *msg;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    commit = T_NEW(clp_command_t, clp_new_command, 1, "commit", NULL, NULL, NULL);
     msg    = init_bool_opt("amend", "a", false);
     T_ADD(clp_add_command_option, commit, msg);
     T_ADD(clp_add_command_sub_command, root, commit);
 
-    char    *argv[] = {"prog", "commit", "--amend", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "commit", "--amend", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == commit);
     D_TEST_EXPR(msg->value_set == true);
@@ -788,13 +791,13 @@ static void test_subcommand_with_own_option(void)
 
 static void test_no_subcommand_leaves_command_null(void)
 {
-    Command *root, *add;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
+    clp_command_t *root, *add;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add  = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, add);
 
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_NULL(cmd);
     clp_cleanup(root);
@@ -802,15 +805,15 @@ static void test_no_subcommand_leaves_command_null(void)
 
 static void test_multiple_subcommands_dispatch_correct_one(void)
 {
-    Command *root, *add, *rm;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
-    rm   = T_NEW(Command, clp_new_command, 2, "rm", NULL, NULL, NULL);
+    clp_command_t *root, *add, *rm;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add  = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
+    rm   = T_NEW(clp_command_t, clp_new_command, 2, "rm", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, add);
     T_ADD(clp_add_command_sub_command, root, rm);
 
-    char    *argv[] = {"prog", "rm", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "rm", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == rm);
     clp_cleanup(root);
@@ -820,14 +823,14 @@ static void test_multiple_subcommands_dispatch_correct_one(void)
 
 static void test_usize_option_parses_decimal(void)
 {
-    Command *root;
-    Option  *jobs;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    jobs = T_NEW(Option, t_new_option, "jobs", "j", NULL, TYPE_USIZE, false, false);
+    clp_command_t *root;
+    clp_option_t  *jobs;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    jobs = T_NEW(clp_option_t, t_new_option, "jobs", "j", NULL, CLP_TYPE_USIZE, false, false);
     T_ADD(clp_add_command_option, root, jobs);
 
-    char    *argv[] = {"prog", "--jobs", "4", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--jobs", "4", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(jobs->value_set == true);
     D_TEST_EXPR(TV(jobs).value_usize == 4);
@@ -836,14 +839,14 @@ static void test_usize_option_parses_decimal(void)
 
 static void test_long_option_parses_negative(void)
 {
-    Command *root;
-    Option  *level;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    level = T_NEW(Option, t_new_option, "level", "l", NULL, TYPE_LONG, false, false);
+    clp_command_t *root;
+    clp_option_t  *level;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    level = T_NEW(clp_option_t, t_new_option, "level", "l", NULL, CLP_TYPE_LONG, false, false);
     T_ADD(clp_add_command_option, root, level);
 
-    char    *argv[] = {"prog", "--level", "-5", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--level", "-5", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(level->value_set == true);
     D_TEST_EXPR(TV(level).value_long == -5);
@@ -852,14 +855,14 @@ static void test_long_option_parses_negative(void)
 
 static void test_char_option_parses_single_char(void)
 {
-    Command *root;
-    Option  *sep;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    sep  = T_NEW(Option, t_new_option, "sep", "s", NULL, TYPE_CHAR, false, false);
+    clp_command_t *root;
+    clp_option_t  *sep;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    sep  = T_NEW(clp_option_t, t_new_option, "sep", "s", NULL, CLP_TYPE_CHAR, false, false);
     T_ADD(clp_add_command_option, root, sep);
 
-    char    *argv[] = {"prog", "--sep", ",", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--sep", ",", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(sep->value_set == true);
     D_TEST_EXPR(TV(sep).value_char == ',');
@@ -871,14 +874,14 @@ static void test_char_option_parses_single_char(void)
 /* --output= (empty value after =) */
 static void test_long_opt_empty_inline_value(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     output = init_str_opt("output", "o", false);
     T_ADD(clp_add_command_option, root, output);
 
-    char    *argv[] = {"prog", "--output=", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--output=", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(output->value_set == true);
     D_TEST_STR_EQ(TV(output).value_d_string_view.data, "");
@@ -888,21 +891,21 @@ static void test_long_opt_empty_inline_value(void)
 /* options mixed before and after operands (GNU scanning) */
 static void test_option_interleaved_with_operands(void)
 {
-    Command *root;
-    Option  *verbose, *dry;
-    Operand *src, *dst;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose, *dry;
+    clp_operand_t *src, *dst;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     dry     = init_bool_opt("dry-run", "n", false);
-    src = init_str_operand("src", false);
-    dst = init_str_operand("dst", false);
+    src     = init_str_operand("src", false);
+    dst     = init_str_operand("dst", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_option, root, dry);
     T_ADD(clp_add_command_operand, root, src);
     T_ADD(clp_add_command_operand, root, dst);
 
-    char    *argv[] = {"prog", "src.txt", "-v", "dst.txt", "-n", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "src.txt", "-v", "dst.txt", "-n", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == true);
     D_TEST_EXPR(dry->value_set == true);
@@ -914,14 +917,14 @@ static void test_option_interleaved_with_operands(void)
 /* bool option can be set multiple times (not OPT_ACT_SET_UNIQUE) */
 static void test_bool_option_set_twice_is_ok(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, root, verbose);
 
-    char    *argv[] = {"prog", "-v", "--verbose", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "--verbose", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == true);
     D_TEST_EXPR(TV(verbose).value_bool == true);
@@ -931,16 +934,16 @@ static void test_bool_option_set_twice_is_ok(void)
 /* no-arg invocation with only optional options — parses cleanly */
 static void test_no_args_with_optional_options(void)
 {
-    Command *root;
-    Option  *a, *b;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *a, *b;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     a    = init_bool_opt("aaa", "a", false);
     b    = init_bool_opt("bbb", "b", false);
     T_ADD(clp_add_command_option, root, a);
     T_ADD(clp_add_command_option, root, b);
 
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(a->value_set == false);
     D_TEST_EXPR(b->value_set == false);
@@ -950,14 +953,14 @@ static void test_no_args_with_optional_options(void)
 /* long option with hyphen in name: --dry-run */
 static void test_long_opt_with_hyphen_in_name(void)
 {
-    Command *root;
-    Option  *dry;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *dry;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     dry  = init_bool_opt("dry-run", "n", false);
     T_ADD(clp_add_command_option, root, dry);
 
-    char    *argv[] = {"prog", "--dry-run", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--dry-run", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(dry->value_set == true);
     clp_cleanup(root);
@@ -968,15 +971,15 @@ static void test_long_opt_with_hyphen_in_name(void)
 /* prog cmd subcmd — 2-level dispatch, returned command is innermost */
 static void test_two_level_subcommand_dispatch(void)
 {
-    Command *root, *remote, *add;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    remote = T_NEW(Command, clp_new_command, 1, "remote", NULL, NULL, NULL);
-    add    = T_NEW(Command, clp_new_command, 2, "add", NULL, NULL, NULL);
+    clp_command_t *root, *remote, *add;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    remote = T_NEW(clp_command_t, clp_new_command, 1, "remote", NULL, NULL, NULL);
+    add    = T_NEW(clp_command_t, clp_new_command, 2, "add", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, remote);
     T_ADD(clp_add_command_sub_command, remote, add);
 
-    char    *argv[] = {"prog", "remote", "add", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "remote", "add", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     clp_cleanup(root);
@@ -985,17 +988,17 @@ static void test_two_level_subcommand_dispatch(void)
 /* prog cmd subcmd subsubcmd — 3-level dispatch */
 static void test_three_level_subcommand_dispatch(void)
 {
-    Command *root, *remote, *add, *origin;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    remote = T_NEW(Command, clp_new_command, 1, "remote", NULL, NULL, NULL);
-    add    = T_NEW(Command, clp_new_command, 2, "add", NULL, NULL, NULL);
-    origin = T_NEW(Command, clp_new_command, 3, "origin", NULL, NULL, NULL);
+    clp_command_t *root, *remote, *add, *origin;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    remote = T_NEW(clp_command_t, clp_new_command, 1, "remote", NULL, NULL, NULL);
+    add    = T_NEW(clp_command_t, clp_new_command, 2, "add", NULL, NULL, NULL);
+    origin = T_NEW(clp_command_t, clp_new_command, 3, "origin", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, remote);
     T_ADD(clp_add_command_sub_command, remote, add);
     T_ADD(clp_add_command_sub_command, add, origin);
 
-    char    *argv[] = {"prog", "remote", "add", "origin", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "remote", "add", "origin", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == origin);
     clp_cleanup(root);
@@ -1004,10 +1007,10 @@ static void test_three_level_subcommand_dispatch(void)
 /* parent_command pointer is set correctly for each level */
 static void test_parent_command_pointer_chain(void)
 {
-    Command *root, *lvl1, *lvl2;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    lvl1 = T_NEW(Command, clp_new_command, 1, "cmd", NULL, NULL, NULL);
-    lvl2 = T_NEW(Command, clp_new_command, 2, "sub", NULL, NULL, NULL);
+    clp_command_t *root, *lvl1, *lvl2;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    lvl1 = T_NEW(clp_command_t, clp_new_command, 1, "cmd", NULL, NULL, NULL);
+    lvl2 = T_NEW(clp_command_t, clp_new_command, 2, "sub", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, lvl1);
     T_ADD(clp_add_command_sub_command, lvl1, lvl2);
 
@@ -1019,18 +1022,18 @@ static void test_parent_command_pointer_chain(void)
 /* root option before subcommand is parsed at root scope */
 static void test_root_option_before_subcommand(void)
 {
-    Command *root, *push;
-    Option  *verbose, *force;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push    = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
+    clp_command_t *root, *push;
+    clp_option_t  *verbose, *force;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push    = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     force   = init_bool_opt("force", "f", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_option, push, force);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "--verbose", "push", "--force", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--verbose", "push", "--force", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == push);
     D_TEST_EXPR(verbose->value_set == true);
@@ -1041,18 +1044,18 @@ static void test_root_option_before_subcommand(void)
 /* root option is unset when subcommand option is the only thing provided */
 static void test_root_option_unset_when_only_sub_option_given(void)
 {
-    Command *root, *push;
-    Option  *verbose, *force;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push    = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
+    clp_command_t *root, *push;
+    clp_option_t  *verbose, *force;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push    = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     force   = init_bool_opt("force", "f", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_option, push, force);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "push", "--force", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "push", "--force", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(verbose->value_set == false);
     D_TEST_EXPR(force->value_set == true);
@@ -1062,16 +1065,16 @@ static void test_root_option_unset_when_only_sub_option_given(void)
 /* options at all 3 levels each get correctly assigned */
 static void test_options_at_each_of_three_levels(void)
 {
-    Command *root, *remote, *add;
-    Option  *verbose, *url, *force;
-    Operand *name;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    remote  = T_NEW(Command, clp_new_command, 1, "remote", NULL, NULL, NULL);
-    add     = T_NEW(Command, clp_new_command, 2, "add", NULL, NULL, NULL);
+    clp_command_t *root, *remote, *add;
+    clp_option_t  *verbose, *url, *force;
+    clp_operand_t *name;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    remote  = T_NEW(clp_command_t, clp_new_command, 1, "remote", NULL, NULL, NULL);
+    add     = T_NEW(clp_command_t, clp_new_command, 2, "add", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     url     = init_str_opt("url", "u", false);
     force   = init_bool_opt("force", "f", false);
-    name = init_str_operand("name", false);
+    name    = init_str_operand("name", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_option, remote, url);
     T_ADD(clp_add_command_option, add, force);
@@ -1079,8 +1082,8 @@ static void test_options_at_each_of_three_levels(void)
     T_ADD(clp_add_command_sub_command, root, remote);
     T_ADD(clp_add_command_sub_command, remote, add);
 
-    char    *argv[] = {"prog", "--verbose", "remote", "--url", "git@x.com", "add", "--force", "origin", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--verbose", "remote", "--url", "git@x.com", "add", "--force", "origin", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     D_TEST_EXPR(verbose->value_set == true);
@@ -1095,11 +1098,11 @@ static void test_options_at_each_of_three_levels(void)
 /* sibling subcommands are isolated — parsing one doesn't affect the other */
 static void test_sibling_subcommand_options_are_isolated(void)
 {
-    Command *root, *add, *rm;
-    Option  *force, *recursive;
-    root      = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add       = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
-    rm        = T_NEW(Command, clp_new_command, 2, "rm", NULL, NULL, NULL);
+    clp_command_t *root, *add, *rm;
+    clp_option_t  *force, *recursive;
+    root      = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add       = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
+    rm        = T_NEW(clp_command_t, clp_new_command, 2, "rm", NULL, NULL, NULL);
     force     = init_bool_opt("force", "f", false);
     recursive = init_bool_opt("recursive", "r", false);
     T_ADD(clp_add_command_option, add, force);
@@ -1107,8 +1110,8 @@ static void test_sibling_subcommand_options_are_isolated(void)
     T_ADD(clp_add_command_sub_command, root, add);
     T_ADD(clp_add_command_sub_command, root, rm);
 
-    char    *argv[] = {"prog", "rm", "--recursive", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "rm", "--recursive", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == rm);
     D_TEST_EXPR(recursive->value_set == true);
@@ -1119,19 +1122,19 @@ static void test_sibling_subcommand_options_are_isolated(void)
 /* subcommand with both options and operands */
 static void test_subcommand_with_options_and_operands(void)
 {
-    Command *root, *commit;
-    Option  *amend;
-    Operand *msg;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    commit = T_NEW(Command, clp_new_command, 1, "commit", NULL, NULL, NULL);
+    clp_command_t *root, *commit;
+    clp_option_t  *amend;
+    clp_operand_t *msg;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    commit = T_NEW(clp_command_t, clp_new_command, 1, "commit", NULL, NULL, NULL);
     amend  = init_bool_opt("amend", "a", false);
-    msg = init_str_operand("message", false);
+    msg    = init_str_operand("message", false);
     T_ADD(clp_add_command_option, commit, amend);
     T_ADD(clp_add_command_operand, commit, msg);
     T_ADD(clp_add_command_sub_command, root, commit);
 
-    char    *argv[] = {"prog", "commit", "--amend", "my message", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "commit", "--amend", "my message", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == commit);
     D_TEST_EXPR(amend->value_set == true);
@@ -1143,17 +1146,17 @@ static void test_subcommand_with_options_and_operands(void)
 /* adding a subcommand to a command that already has operands is rejected */
 static void _err_add_sub_when_operands_exist(void)
 {
-    Command *root, *push;
-    Operand *file;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
+    clp_command_t *root, *push;
+    clp_operand_t *file;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
     file = init_str_operand("file", false);
     T_ADD(clp_add_command_operand, root, file);
     T_ADD(clp_add_command_sub_command, root, push);
 }
 static void test_add_subcommand_when_operands_exist_exits(void)
 {
-    ChildResult r = run_child(_err_add_sub_when_operands_exist);
+    child_result_t r = run_child(_err_add_sub_when_operands_exist);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "cannot have both operands and subcommands"));
     D_TEST_NOT_NULL(strstr(r.err, "prog"));
@@ -1162,17 +1165,17 @@ static void test_add_subcommand_when_operands_exist_exits(void)
 /* adding an operand to a command that already has subcommands is rejected */
 static void _err_add_operand_when_subcommands_exist(void)
 {
-    Command *root, *push;
-    Operand *file;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
+    clp_command_t *root, *push;
+    clp_operand_t *file;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
     file = init_str_operand("file", false);
     T_ADD(clp_add_command_sub_command, root, push);
     T_ADD(clp_add_command_operand, root, file);
 }
 static void test_add_operand_when_subcommands_exist_exits(void)
 {
-    ChildResult r = run_child(_err_add_operand_when_subcommands_exist);
+    child_result_t r = run_child(_err_add_operand_when_subcommands_exist);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "cannot have both operands and subcommands"));
     D_TEST_NOT_NULL(strstr(r.err, "prog"));
@@ -1181,19 +1184,19 @@ static void test_add_operand_when_subcommands_exist_exits(void)
 /* -- in subcommand context terminates its option parsing */
 static void test_double_hyphen_in_subcommand_context(void)
 {
-    Command *root, *add;
-    Option  *force;
-    Operand *file;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add   = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
+    clp_command_t *root, *add;
+    clp_option_t  *force;
+    clp_operand_t *file;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add   = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
     force = init_bool_opt("force", "f", false);
-    file = init_str_operand("file", false);
+    file  = init_str_operand("file", false);
     T_ADD(clp_add_command_option, add, force);
     T_ADD(clp_add_command_operand, add, file);
     T_ADD(clp_add_command_sub_command, root, add);
 
-    char    *argv[] = {"prog", "add", "--", "--force", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "add", "--", "--force", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     D_TEST_EXPR(force->value_set == false);
@@ -1205,18 +1208,18 @@ static void test_double_hyphen_in_subcommand_context(void)
 /* combined short flags in subcommand context */
 static void test_combined_short_flags_in_subcommand(void)
 {
-    Command *root, *add;
-    Option  *recurse, *force;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add     = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
+    clp_command_t *root, *add;
+    clp_option_t  *recurse, *force;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add     = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
     recurse = init_bool_opt("recursive", "r", false);
     force   = init_bool_opt("force", "f", false);
     T_ADD(clp_add_command_option, add, recurse);
     T_ADD(clp_add_command_option, add, force);
     T_ADD(clp_add_command_sub_command, root, add);
 
-    char    *argv[] = {"prog", "add", "-rf", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "add", "-rf", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     D_TEST_EXPR(recurse->value_set == true);
@@ -1227,16 +1230,16 @@ static void test_combined_short_flags_in_subcommand(void)
 /* count option in subcommand context */
 static void test_count_option_in_subcommand(void)
 {
-    Command *root, *run;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    run     = T_NEW(Command, clp_new_command, 1, "run", NULL, NULL, NULL);
+    clp_command_t *root, *run;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    run     = T_NEW(clp_command_t, clp_new_command, 1, "run", NULL, NULL, NULL);
     verbose = init_count_opt("verbose", "v");
     T_ADD(clp_add_command_option, run, verbose);
     T_ADD(clp_add_command_sub_command, root, run);
 
-    char    *argv[] = {"prog", "run", "-vvv", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "run", "-vvv", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == run);
     D_TEST_EXPR(TV(verbose).value_usize == 3);
@@ -1246,16 +1249,16 @@ static void test_count_option_in_subcommand(void)
 /* list option in subcommand context */
 static void test_list_option_in_subcommand(void)
 {
-    Command *root, *build;
-    Option  *features;
-    root     = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    build    = T_NEW(Command, clp_new_command, 1, "build", NULL, NULL, NULL);
+    clp_command_t *root, *build;
+    clp_option_t  *features;
+    root     = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    build    = T_NEW(clp_command_t, clp_new_command, 1, "build", NULL, NULL, NULL);
     features = init_list_opt("features", "F");
     T_ADD(clp_add_command_option, build, features);
     T_ADD(clp_add_command_sub_command, root, build);
 
-    char    *argv[] = {"prog", "build", "--features", "x,y,z", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "build", "--features", "x,y,z", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == build);
     D_TEST_EXPR(features->value_set == true);
@@ -1266,16 +1269,16 @@ static void test_list_option_in_subcommand(void)
 /* long opt with = value in subcommand context */
 static void test_long_opt_eq_value_in_subcommand(void)
 {
-    Command *root, *clone;
-    Option  *depth;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    clone = T_NEW(Command, clp_new_command, 1, "clone", NULL, NULL, NULL);
-    depth = T_NEW(Option, t_new_option, "depth", "d", NULL, TYPE_USIZE, false, false);
+    clp_command_t *root, *clone;
+    clp_option_t  *depth;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clone = T_NEW(clp_command_t, clp_new_command, 1, "clone", NULL, NULL, NULL);
+    depth = T_NEW(clp_option_t, t_new_option, "depth", "d", NULL, CLP_TYPE_USIZE, false, false);
     T_ADD(clp_add_command_option, clone, depth);
     T_ADD(clp_add_command_sub_command, root, clone);
 
-    char    *argv[] = {"prog", "clone", "--depth=1", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "clone", "--depth=1", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == clone);
     D_TEST_EXPR(depth->value_set == true);
@@ -1286,18 +1289,18 @@ static void test_long_opt_eq_value_in_subcommand(void)
 /* subcommand with multiple operands, all set */
 static void test_subcommand_with_multiple_operands(void)
 {
-    Command *root, *cp;
-    Operand *src, *dst;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    cp   = T_NEW(Command, clp_new_command, 1, "cp", NULL, NULL, NULL);
-    src = init_str_operand("src", false);
-    dst = init_str_operand("dst", false);
+    clp_command_t *root, *cp;
+    clp_operand_t *src, *dst;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    cp   = T_NEW(clp_command_t, clp_new_command, 1, "cp", NULL, NULL, NULL);
+    src  = init_str_operand("src", false);
+    dst  = init_str_operand("dst", false);
     T_ADD(clp_add_command_operand, cp, src);
     T_ADD(clp_add_command_operand, cp, dst);
     T_ADD(clp_add_command_sub_command, root, cp);
 
-    char    *argv[] = {"prog", "cp", "a.txt", "b.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "cp", "a.txt", "b.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == cp);
     D_TEST_EXPR(src->value_set == true);
@@ -1310,17 +1313,17 @@ static void test_subcommand_with_multiple_operands(void)
 /* three sibling subcommands, third one dispatched */
 static void test_three_siblings_dispatch_third(void)
 {
-    Command *root, *add, *rm, *ls;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
-    rm   = T_NEW(Command, clp_new_command, 2, "rm", NULL, NULL, NULL);
-    ls   = T_NEW(Command, clp_new_command, 3, "ls", NULL, NULL, NULL);
+    clp_command_t *root, *add, *rm, *ls;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add  = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
+    rm   = T_NEW(clp_command_t, clp_new_command, 2, "rm", NULL, NULL, NULL);
+    ls   = T_NEW(clp_command_t, clp_new_command, 3, "ls", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, add);
     T_ADD(clp_add_command_sub_command, root, rm);
     T_ADD(clp_add_command_sub_command, root, ls);
 
-    char    *argv[] = {"prog", "ls", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "ls", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == ls);
     clp_cleanup(root);
@@ -1329,15 +1332,15 @@ static void test_three_siblings_dispatch_third(void)
 /* subcommand code is correct for identification */
 static void test_subcommand_code_is_correct(void)
 {
-    Command *root, *add, *rm;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 42, "add", NULL, NULL, NULL);
-    rm   = T_NEW(Command, clp_new_command, 99, "rm", NULL, NULL, NULL);
+    clp_command_t *root, *add, *rm;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add  = T_NEW(clp_command_t, clp_new_command, 42, "add", NULL, NULL, NULL);
+    rm   = T_NEW(clp_command_t, clp_new_command, 99, "rm", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, add);
     T_ADD(clp_add_command_sub_command, root, rm);
 
-    char    *argv[] = {"prog", "rm", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "rm", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd->code == 99);
     clp_cleanup(root);
@@ -1346,19 +1349,19 @@ static void test_subcommand_code_is_correct(void)
 /* subcommand with inline short value and its own operand */
 static void test_subcommand_short_inline_value_and_operand(void)
 {
-    Command *root, *push;
-    Option  *remote;
-    Operand *branch;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push   = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
+    clp_command_t *root, *push;
+    clp_option_t  *remote;
+    clp_operand_t *branch;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push   = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
     remote = init_str_opt("remote", "r", false);
     branch = init_str_operand("branch", false);
     T_ADD(clp_add_command_option, push, remote);
     T_ADD(clp_add_command_operand, push, branch);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "push", "-rorigin", "main", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "push", "-rorigin", "main", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == push);
     D_TEST_EXPR(remote->value_set == true);
@@ -1371,11 +1374,11 @@ static void test_subcommand_short_inline_value_and_operand(void)
 /* deep 3-level: options at level 1 and 3, not level 2 */
 static void test_three_level_options_at_outer_and_inner(void)
 {
-    Command *root, *grp, *cmd;
-    Option  *quiet, *debug;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    grp   = T_NEW(Command, clp_new_command, 1, "grp", NULL, NULL, NULL);
-    cmd   = T_NEW(Command, clp_new_command, 2, "cmd", NULL, NULL, NULL);
+    clp_command_t *root, *grp, *cmd;
+    clp_option_t  *quiet, *debug;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    grp   = T_NEW(clp_command_t, clp_new_command, 1, "grp", NULL, NULL, NULL);
+    cmd   = T_NEW(clp_command_t, clp_new_command, 2, "cmd", NULL, NULL, NULL);
     quiet = init_bool_opt("quiet", "q", false);
     debug = init_bool_opt("debug", "d", false);
     T_ADD(clp_add_command_option, root, quiet);
@@ -1383,8 +1386,8 @@ static void test_three_level_options_at_outer_and_inner(void)
     T_ADD(clp_add_command_sub_command, root, grp);
     T_ADD(clp_add_command_sub_command, grp, cmd);
 
-    char    *argv[]     = {"prog", "-q", "grp", "cmd", "--debug", NULL};
-    Command *dispatched = NULL;
+    char          *argv[]     = {"prog", "-q", "grp", "cmd", "--debug", NULL};
+    clp_command_t *dispatched = NULL;
     clp_parse_args(root, argv, &dispatched);
     D_TEST_EXPR(dispatched == cmd);
     D_TEST_EXPR(quiet->value_set == true);
@@ -1395,11 +1398,11 @@ static void test_three_level_options_at_outer_and_inner(void)
 /* subcommand options don't bleed into sibling that was registered later */
 static void test_sibling_registered_after_does_not_bleed(void)
 {
-    Command *root, *fetch, *pull;
-    Option  *all_fetch, *rebase;
-    root      = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    fetch     = T_NEW(Command, clp_new_command, 1, "fetch", NULL, NULL, NULL);
-    pull      = T_NEW(Command, clp_new_command, 2, "pull", NULL, NULL, NULL);
+    clp_command_t *root, *fetch, *pull;
+    clp_option_t  *all_fetch, *rebase;
+    root      = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    fetch     = T_NEW(clp_command_t, clp_new_command, 1, "fetch", NULL, NULL, NULL);
+    pull      = T_NEW(clp_command_t, clp_new_command, 2, "pull", NULL, NULL, NULL);
     all_fetch = init_bool_opt("all", "a", false);
     rebase    = init_bool_opt("rebase", "r", false);
     T_ADD(clp_add_command_option, fetch, all_fetch);
@@ -1407,8 +1410,8 @@ static void test_sibling_registered_after_does_not_bleed(void)
     T_ADD(clp_add_command_sub_command, root, fetch);
     T_ADD(clp_add_command_sub_command, root, pull);
 
-    char    *argv[] = {"prog", "fetch", "--all", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "fetch", "--all", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == fetch);
     D_TEST_EXPR(all_fetch->value_set == true);
@@ -1419,11 +1422,11 @@ static void test_sibling_registered_after_does_not_bleed(void)
 /* option before 2-level nested subcommand */
 static void test_root_option_before_two_level_subcommand(void)
 {
-    Command *root, *remote, *add;
-    Option  *verbose, *force;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    remote  = T_NEW(Command, clp_new_command, 1, "remote", NULL, NULL, NULL);
-    add     = T_NEW(Command, clp_new_command, 2, "add", NULL, NULL, NULL);
+    clp_command_t *root, *remote, *add;
+    clp_option_t  *verbose, *force;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    remote  = T_NEW(clp_command_t, clp_new_command, 1, "remote", NULL, NULL, NULL);
+    add     = T_NEW(clp_command_t, clp_new_command, 2, "add", NULL, NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     force   = init_bool_opt("force", "f", false);
     T_ADD(clp_add_command_option, root, verbose);
@@ -1431,8 +1434,8 @@ static void test_root_option_before_two_level_subcommand(void)
     T_ADD(clp_add_command_sub_command, root, remote);
     T_ADD(clp_add_command_sub_command, remote, add);
 
-    char    *argv[] = {"prog", "-v", "remote", "add", "-f", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "remote", "add", "-f", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     D_TEST_EXPR(verbose->value_set == true);
@@ -1443,15 +1446,15 @@ static void test_root_option_before_two_level_subcommand(void)
 /* no args to program with subcommands registered — command stays NULL */
 static void test_no_args_with_subcommands_registered(void)
 {
-    Command *root, *add, *rm;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
-    rm   = T_NEW(Command, clp_new_command, 2, "rm", NULL, NULL, NULL);
+    clp_command_t *root, *add, *rm;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add  = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
+    rm   = T_NEW(clp_command_t, clp_new_command, 2, "rm", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, add);
     T_ADD(clp_add_command_sub_command, root, rm);
 
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_NULL(cmd);
     clp_cleanup(root);
@@ -1460,16 +1463,16 @@ static void test_no_args_with_subcommands_registered(void)
 /* subcommand with list operand consumes all trailing args */
 static void test_subcommand_with_list_operand(void)
 {
-    Command *root, *add;
-    Operand *files;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
+    clp_command_t *root, *add;
+    clp_operand_t *files;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add   = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
     files = init_list_operand("files", false);
     T_ADD(clp_add_command_operand, add, files);
     T_ADD(clp_add_command_sub_command, root, add);
 
-    char    *argv[] = {"prog", "add", "a.c", "b.c", "c.c", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "add", "a.c", "b.c", "c.c", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     D_TEST_EXPR(files->value_set == true);
@@ -1482,16 +1485,16 @@ static void test_subcommand_with_list_operand(void)
 /* global bool option set before subcommand is accessible after dispatch */
 static void test_global_option_set_at_parent_accessible_after_dispatch(void)
 {
-    Command *root, *push;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push    = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
-    verbose = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, true);
+    clp_command_t *root, *push;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push    = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
+    verbose = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, true);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "--verbose", "push", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--verbose", "push", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == push);
     D_TEST_EXPR(verbose->value_set == true);
@@ -1501,16 +1504,16 @@ static void test_global_option_set_at_parent_accessible_after_dispatch(void)
 /* required global option set at parent level satisfies child required check */
 static void test_required_global_option_set_at_parent_satisfies_child(void)
 {
-    Command *root, *push;
-    Option  *token;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push  = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
-    token = T_NEW(Option, t_new_option, "token", "t", NULL, TYPE_STR, true, true);
+    clp_command_t *root, *push;
+    clp_option_t  *token;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push  = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
+    token = T_NEW(clp_option_t, t_new_option, "token", "t", NULL, CLP_TYPE_STR, true, true);
     T_ADD(clp_add_command_option, root, token);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "--token", "abc", "push", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--token", "abc", "push", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == push);
     D_TEST_EXPR(token->value_set == true);
@@ -1521,23 +1524,23 @@ static void test_required_global_option_set_at_parent_satisfies_child(void)
 /* required global option NOT set — child required check catches it when child has args */
 static void _err_required_global_option_unset_in_child(void)
 {
-    Command *root, *push;
-    Option  *token, *force;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push  = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
-    token = T_NEW(Option, t_new_option, "token", "t", NULL, TYPE_STR, true, true);
+    clp_command_t *root, *push;
+    clp_option_t  *token, *force;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push  = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
+    token = T_NEW(clp_option_t, t_new_option, "token", "t", NULL, CLP_TYPE_STR, true, true);
     force = init_bool_opt("force", "f", false);
     T_ADD(clp_add_command_option, root, token);
     T_ADD(clp_add_command_option, push, force);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "push", "--force", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "push", "--force", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_required_global_option_unset_exits_via_child(void)
 {
-    ChildResult r = run_child(_err_required_global_option_unset_in_child);
+    child_result_t r = run_child(_err_required_global_option_unset_in_child);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following options were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "--token"));
@@ -1547,16 +1550,16 @@ static void test_required_global_option_unset_exits_via_child(void)
 /* non-global required option on parent is NOT inherited — child check ignores it */
 static void test_non_global_required_option_not_inherited_to_child(void)
 {
-    Command *root, *push;
-    Option  *token;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push  = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
-    token = T_NEW(Option, t_new_option, "token", "t", NULL, TYPE_STR, true, false);
+    clp_command_t *root, *push;
+    clp_option_t  *token;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push  = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
+    token = T_NEW(clp_option_t, t_new_option, "token", "t", NULL, CLP_TYPE_STR, true, false);
     T_ADD(clp_add_command_option, root, token);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "push", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "push", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == push);
     D_TEST_EXPR(token->value_set == false);
@@ -1566,18 +1569,18 @@ static void test_non_global_required_option_not_inherited_to_child(void)
 /* global option propagates all the way to a deeply nested command */
 static void test_global_option_inherited_through_nested_levels(void)
 {
-    Command *root, *remote, *add;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    remote  = T_NEW(Command, clp_new_command, 1, "remote", NULL, NULL, NULL);
-    add     = T_NEW(Command, clp_new_command, 2, "add", NULL, NULL, NULL);
-    verbose = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, true);
+    clp_command_t *root, *remote, *add;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    remote  = T_NEW(clp_command_t, clp_new_command, 1, "remote", NULL, NULL, NULL);
+    add     = T_NEW(clp_command_t, clp_new_command, 2, "add", NULL, NULL, NULL);
+    verbose = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, true);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_sub_command, root, remote);
     T_ADD(clp_add_command_sub_command, remote, add);
 
-    char    *argv[] = {"prog", "--verbose", "remote", "add", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--verbose", "remote", "add", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == add);
     D_TEST_EXPR(verbose->value_set == true);
@@ -1587,18 +1590,18 @@ static void test_global_option_inherited_through_nested_levels(void)
 /* multiple global options from parent are all inherited */
 static void test_multiple_global_options_all_inherited(void)
 {
-    Command *root, *push;
-    Option  *verbose, *dry_run;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push    = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
-    verbose = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, true);
-    dry_run = T_NEW(Option, t_new_option, "dry-run", "n", NULL, TYPE_BOOL, false, true);
+    clp_command_t *root, *push;
+    clp_option_t  *verbose, *dry_run;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push    = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
+    verbose = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, true);
+    dry_run = T_NEW(clp_option_t, t_new_option, "dry-run", "n", NULL, CLP_TYPE_BOOL, false, true);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_option, root, dry_run);
     T_ADD(clp_add_command_sub_command, root, push);
 
-    char    *argv[] = {"prog", "--verbose", "--dry-run", "push", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--verbose", "--dry-run", "push", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(cmd == push);
     D_TEST_EXPR(verbose->value_set == true);
@@ -1611,21 +1614,21 @@ static void test_multiple_global_options_all_inherited(void)
 static void test_five_level_deep_with_many_options_and_operands(void)
 {
     /* hierarchy: prog → cluster → node → process → task → run (5 levels) */
-    Command *root, *cluster, *node, *process, *task, *run;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    cluster = T_NEW(Command, clp_new_command, 1, "cluster", NULL, NULL, NULL);
-    node    = T_NEW(Command, clp_new_command, 2, "node", NULL, NULL, NULL);
-    process = T_NEW(Command, clp_new_command, 3, "process", NULL, NULL, NULL);
-    task    = T_NEW(Command, clp_new_command, 4, "task", NULL, NULL, NULL);
-    run     = T_NEW(Command, clp_new_command, 5, "run", NULL, NULL, NULL);
+    clp_command_t *root, *cluster, *node, *process, *task, *run;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    cluster = T_NEW(clp_command_t, clp_new_command, 1, "cluster", NULL, NULL, NULL);
+    node    = T_NEW(clp_command_t, clp_new_command, 2, "node", NULL, NULL, NULL);
+    process = T_NEW(clp_command_t, clp_new_command, 3, "process", NULL, NULL, NULL);
+    task    = T_NEW(clp_command_t, clp_new_command, 4, "task", NULL, NULL, NULL);
+    run     = T_NEW(clp_command_t, clp_new_command, 5, "run", NULL, NULL, NULL);
 
     /* one option at each intermediate level */
-    Option *trace, *region, *node_id, *proc_pid, *task_pri;
+    clp_option_t *trace, *region, *node_id, *proc_pid, *task_pri;
     trace    = init_bool_opt("trace", "t", false);
     region   = init_str_opt("region", "R", false);
-    node_id  = T_NEW(Option, t_new_option, "node-id", "N", NULL, TYPE_USIZE, false, false);
-    proc_pid = T_NEW(Option, t_new_option, "pid", "P", NULL, TYPE_LONG, false, false);
-    task_pri = T_NEW(Option, t_new_option, "priority", "p", NULL, TYPE_CHAR, false, false);
+    node_id  = T_NEW(clp_option_t, t_new_option, "node-id", "N", NULL, CLP_TYPE_USIZE, false, false);
+    proc_pid = T_NEW(clp_option_t, t_new_option, "pid", "P", NULL, CLP_TYPE_LONG, false, false);
+    task_pri = T_NEW(clp_option_t, t_new_option, "priority", "p", NULL, CLP_TYPE_CHAR, false, false);
 
     T_ADD(clp_add_command_option, root, trace);
     T_ADD(clp_add_command_option, cluster, region);
@@ -1634,9 +1637,9 @@ static void test_five_level_deep_with_many_options_and_operands(void)
     T_ADD(clp_add_command_option, task, task_pri);
 
     /* 20 options on "run": 10 bools + 5 str + 2 usize + 1 long + 1 char + 1 count */
-    Option *verbose, *dry_run, *force, *quiet, *all, *recursive, *no_cache, *strict, *opt_async, *parallel;
-    Option *output, *config, *format, *target, *profile;
-    Option *jobs, *retries, *timeout, *sep, *debug;
+    clp_option_t *verbose, *dry_run, *force, *quiet, *all, *recursive, *no_cache, *strict, *opt_async, *parallel;
+    clp_option_t *output, *config, *format, *target, *profile;
+    clp_option_t *jobs, *retries, *timeout, *sep, *debug;
 
     verbose   = init_bool_opt("verbose", "v", false);
     dry_run   = init_bool_opt("dry-run", "n", false);
@@ -1655,10 +1658,10 @@ static void test_five_level_deep_with_many_options_and_operands(void)
     target  = init_str_opt("target", "T", false);
     profile = init_str_opt("profile", "e", false);
 
-    jobs    = T_NEW(Option, t_new_option, "jobs", "j", NULL, TYPE_USIZE, false, false);
-    retries = T_NEW(Option, t_new_option, "retries", "x", NULL, TYPE_USIZE, false, false);
-    timeout = T_NEW(Option, t_new_option, "timeout", "m", NULL, TYPE_LONG, false, false);
-    sep     = T_NEW(Option, t_new_option, "separator", "S", NULL, TYPE_CHAR, false, false);
+    jobs    = T_NEW(clp_option_t, t_new_option, "jobs", "j", NULL, CLP_TYPE_USIZE, false, false);
+    retries = T_NEW(clp_option_t, t_new_option, "retries", "x", NULL, CLP_TYPE_USIZE, false, false);
+    timeout = T_NEW(clp_option_t, t_new_option, "timeout", "m", NULL, CLP_TYPE_LONG, false, false);
+    sep     = T_NEW(clp_option_t, t_new_option, "separator", "S", NULL, CLP_TYPE_CHAR, false, false);
     debug   = init_count_opt("debug", "d");
 
     T_ADD(clp_add_command_option, run, verbose);
@@ -1683,8 +1686,8 @@ static void test_five_level_deep_with_many_options_and_operands(void)
     T_ADD(clp_add_command_option, run, debug);
 
     /* 20 operands on "run": 19 SET (op01-op19) + 1 LIST (files) */
-    Operand *op01, *op02, *op03, *op04, *op05, *op06, *op07, *op08, *op09, *op10;
-    Operand *op11, *op12, *op13, *op14, *op15, *op16, *op17, *op18, *op19, *files;
+    clp_operand_t *op01, *op02, *op03, *op04, *op05, *op06, *op07, *op08, *op09, *op10;
+    clp_operand_t *op11, *op12, *op13, *op14, *op15, *op16, *op17, *op18, *op19, *files;
 
     op01 = init_str_operand("op01", false);
     op02 = init_str_operand("op02", false);
@@ -1759,7 +1762,7 @@ static void test_five_level_deep_with_many_options_and_operands(void)
                     /* LIST operand: 3 filenames */
                     "fa.c", "fb.c", "fc.c", NULL};
 
-    Command *cmd = NULL;
+    clp_command_t *cmd = NULL;
     clp_parse_args(root, argv, &cmd);
 
     /* dispatch and code */
@@ -1856,7 +1859,7 @@ static void test_five_level_deep_with_many_options_and_operands(void)
     /* LIST operand: 3 entries */
     D_TEST_EXPR(files->value_set == true);
     D_TEST_EXPR(d_dyn_array_get_size(&TV(files).value_list) == 3);
-    DStringView fv;
+    d_string_view_t fv;
     D_TEST_EXPR(d_dyn_array_get_elem_at(&TV(files).value_list, 0, &fv) == D_OK);
     D_TEST_EXPR(d_string_view_compare_against_c_string(fv, "fa.c"));
     D_TEST_EXPR(d_dyn_array_get_elem_at(&TV(files).value_list, 1, &fv) == D_OK);
@@ -1872,15 +1875,15 @@ static void test_five_level_deep_with_many_options_and_operands(void)
 /* unknown long option */
 static void _err_unknown_long_opt(void)
 {
-    Command *root;
-    root            = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    char    *argv[] = {"prog", "--unknown", NULL};
-    Command *cmd    = NULL;
+    clp_command_t *root;
+    root                  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    char          *argv[] = {"prog", "--unknown", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_unknown_long_option_exits(void)
 {
-    ChildResult r = run_child(_err_unknown_long_opt);
+    child_result_t r = run_child(_err_unknown_long_opt);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "unknown option"));
     D_TEST_NOT_NULL(strstr(r.err, "--unknown"));
@@ -1889,15 +1892,15 @@ static void test_unknown_long_option_exits(void)
 /* unknown short option */
 static void _err_unknown_short_opt(void)
 {
-    Command *root;
-    root            = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    char    *argv[] = {"prog", "-z", NULL};
-    Command *cmd    = NULL;
+    clp_command_t *root;
+    root                  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    char          *argv[] = {"prog", "-z", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_unknown_short_option_exits(void)
 {
-    ChildResult r = run_child(_err_unknown_short_opt);
+    child_result_t r = run_child(_err_unknown_short_opt);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "unknown option"));
     D_TEST_NOT_NULL(strstr(r.err, "-z"));
@@ -1906,18 +1909,18 @@ static void test_unknown_short_option_exits(void)
 /* missing required option */
 static void _err_missing_required_opt(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    output = T_NEW(Option, t_new_option, "output", "o", NULL, TYPE_STR, true, false);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    output = T_NEW(clp_option_t, t_new_option, "output", "o", NULL, CLP_TYPE_STR, true, false);
     T_ADD(clp_add_command_option, root, output);
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_missing_required_option_exits(void)
 {
-    ChildResult r = run_child(_err_missing_required_opt);
+    child_result_t r = run_child(_err_missing_required_opt);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following options were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "--output"));
@@ -1926,18 +1929,18 @@ static void test_missing_required_option_exits(void)
 /* missing required operand */
 static void _err_missing_required_operand(void)
 {
-    Command *root;
-    Operand *file;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    file = T_NEW(Operand, t_new_operand, "file", NULL, TYPE_STR, true);
+    clp_command_t *root;
+    clp_operand_t *file;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    file = T_NEW(clp_operand_t, t_new_operand, "file", NULL, CLP_TYPE_STR, true);
     T_ADD(clp_add_command_operand, root, file);
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_missing_required_operand_exits(void)
 {
-    ChildResult r = run_child(_err_missing_required_operand);
+    child_result_t r = run_child(_err_missing_required_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following operands were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "<file>"));
@@ -1946,99 +1949,99 @@ static void test_missing_required_operand_exits(void)
 /* too many operands */
 static void _err_too_many_operands(void)
 {
-    Command *root;
-    Operand *file;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    file = T_NEW(Operand, t_new_operand, "file", NULL, TYPE_STR, false);
+    clp_command_t *root;
+    clp_operand_t *file;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    file = T_NEW(clp_operand_t, t_new_operand, "file", NULL, CLP_TYPE_STR, false);
     T_ADD(clp_add_command_operand, root, file);
-    char    *argv[] = {"prog", "a.txt", "b.txt", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "a.txt", "b.txt", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_too_many_operands_exits(void)
 {
-    ChildResult r = run_child(_err_too_many_operands);
+    child_result_t r = run_child(_err_too_many_operands);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "too many operands"));
 }
 
-/* invalid value for TYPE_USIZE */
+/* invalid value for CLP_TYPE_USIZE */
 static void _err_invalid_usize_value(void)
 {
-    Command *root;
-    Option  *jobs;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    jobs = T_NEW(Option, t_new_option, "jobs", "j", NULL, TYPE_USIZE, false, false);
+    clp_command_t *root;
+    clp_option_t  *jobs;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    jobs = T_NEW(clp_option_t, t_new_option, "jobs", "j", NULL, CLP_TYPE_USIZE, false, false);
     T_ADD(clp_add_command_option, root, jobs);
-    char    *argv[] = {"prog", "--jobs", "notanumber", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--jobs", "notanumber", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_usize_value_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_usize_value);
+    child_result_t r = run_child(_err_invalid_usize_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "invalid value"));
     D_TEST_NOT_NULL(strstr(r.err, "notanumber"));
     D_TEST_NOT_NULL(strstr(r.err, "--jobs"));
 }
 
-/* invalid value for TYPE_LONG */
+/* invalid value for CLP_TYPE_LONG */
 static void _err_invalid_long_value(void)
 {
-    Command *root;
-    Option  *level;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    level = T_NEW(Option, t_new_option, "level", "l", NULL, TYPE_LONG, false, false);
+    clp_command_t *root;
+    clp_option_t  *level;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    level = T_NEW(clp_option_t, t_new_option, "level", "l", NULL, CLP_TYPE_LONG, false, false);
     T_ADD(clp_add_command_option, root, level);
-    char    *argv[] = {"prog", "--level", "abc", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--level", "abc", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_long_value_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_long_value);
+    child_result_t r = run_child(_err_invalid_long_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "invalid value"));
     D_TEST_NOT_NULL(strstr(r.err, "abc"));
     D_TEST_NOT_NULL(strstr(r.err, "--level"));
 }
 
-/* invalid value for TYPE_CHAR: more than one character */
+/* invalid value for CLP_TYPE_CHAR: more than one character */
 static void _err_invalid_char_too_many(void)
 {
-    Command *root;
-    Option  *sep;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    sep  = T_NEW(Option, t_new_option, "sep", "s", NULL, TYPE_CHAR, false, false);
+    clp_command_t *root;
+    clp_option_t  *sep;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    sep  = T_NEW(clp_option_t, t_new_option, "sep", "s", NULL, CLP_TYPE_CHAR, false, false);
     T_ADD(clp_add_command_option, root, sep);
-    char    *argv[] = {"prog", "--sep", "ab", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--sep", "ab", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_char_value_too_many_chars_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_char_too_many);
+    child_result_t r = run_child(_err_invalid_char_too_many);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "too many characters"));
     D_TEST_NOT_NULL(strstr(r.err, "--sep"));
 }
 
-/* invalid value for TYPE_CHAR: empty string */
+/* invalid value for CLP_TYPE_CHAR: empty string */
 static void _err_invalid_char_empty(void)
 {
-    Command *root;
-    Option  *sep;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    sep  = T_NEW(Option, t_new_option, "sep", "s", NULL, TYPE_CHAR, false, false);
+    clp_command_t *root;
+    clp_option_t  *sep;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    sep  = T_NEW(clp_option_t, t_new_option, "sep", "s", NULL, CLP_TYPE_CHAR, false, false);
     T_ADD(clp_add_command_option, root, sep);
-    char    *argv[] = {"prog", "--sep", "", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--sep", "", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_char_value_empty_string_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_char_empty);
+    child_result_t r = run_child(_err_invalid_char_empty);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "cannot parse char"));
     D_TEST_NOT_NULL(strstr(r.err, "--sep"));
@@ -2047,18 +2050,18 @@ static void test_invalid_char_value_empty_string_exits(void)
 /* bool option given inline value: --verbose=foo */
 static void _err_bool_opt_inline_value(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    verbose = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, false);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    verbose = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, false);
     T_ADD(clp_add_command_option, root, verbose);
-    char    *argv[] = {"prog", "--verbose=foo", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--verbose=foo", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_bool_opt_with_inline_value_exits(void)
 {
-    ChildResult r = run_child(_err_bool_opt_inline_value);
+    child_result_t r = run_child(_err_bool_opt_inline_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "doesn't allow an argument"));
     D_TEST_NOT_NULL(strstr(r.err, "--verbose"));
@@ -2067,18 +2070,18 @@ static void test_bool_opt_with_inline_value_exits(void)
 /* count option given inline value: --debug=3 */
 static void _err_count_opt_inline_value(void)
 {
-    Command *root;
-    Option  *debug;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    debug = T_NEW(Option, t_new_option_count, "debug", "d", NULL, false);
+    clp_command_t *root;
+    clp_option_t  *debug;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    debug = T_NEW(clp_option_t, t_new_option_count, "debug", "d", NULL, false);
     T_ADD(clp_add_command_option, root, debug);
-    char    *argv[] = {"prog", "--debug=3", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--debug=3", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_count_opt_with_inline_value_exits(void)
 {
-    ChildResult r = run_child(_err_count_opt_inline_value);
+    child_result_t r = run_child(_err_count_opt_inline_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "doesn't allow an argument"));
     D_TEST_NOT_NULL(strstr(r.err, "--debug"));
@@ -2087,18 +2090,18 @@ static void test_count_opt_with_inline_value_exits(void)
 /* str option with no next argument (last in argv) */
 static void _err_str_opt_no_value(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    output = T_NEW(Option, t_new_option, "output", "o", NULL, TYPE_STR, false, false);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    output = T_NEW(clp_option_t, t_new_option, "output", "o", NULL, CLP_TYPE_STR, false, false);
     T_ADD(clp_add_command_option, root, output);
-    char    *argv[] = {"prog", "--output", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--output", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_str_opt_missing_value_exits(void)
 {
-    ChildResult r = run_child(_err_str_opt_no_value);
+    child_result_t r = run_child(_err_str_opt_no_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "option require an argument"));
     D_TEST_NOT_NULL(strstr(r.err, "--output"));
@@ -2107,17 +2110,17 @@ static void test_str_opt_missing_value_exits(void)
 /* duplicate long option name on same command */
 static void _err_duplicate_long_name(void)
 {
-    Command *root;
-    Option  *a, *b;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    a    = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, false);
-    b    = T_NEW(Option, t_new_option, "verbose", "w", NULL, TYPE_BOOL, false, false);
+    clp_command_t *root;
+    clp_option_t  *a, *b;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    a    = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, false);
+    b    = T_NEW(clp_option_t, t_new_option, "verbose", "w", NULL, CLP_TYPE_BOOL, false, false);
     T_ADD(clp_add_command_option, root, a);
     T_ADD(clp_add_command_option, root, b);
 }
 static void test_duplicate_long_option_name_exits(void)
 {
-    ChildResult r = run_child(_err_duplicate_long_name);
+    child_result_t r = run_child(_err_duplicate_long_name);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "already registered"));
     D_TEST_NOT_NULL(strstr(r.err, "--verbose"));
@@ -2126,17 +2129,17 @@ static void test_duplicate_long_option_name_exits(void)
 /* duplicate short option name on same command */
 static void _err_duplicate_short_name(void)
 {
-    Command *root;
-    Option  *a, *b;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    a    = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, false);
-    b    = T_NEW(Option, t_new_option, "vverbose", "v", NULL, TYPE_BOOL, false, false);
+    clp_command_t *root;
+    clp_option_t  *a, *b;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    a    = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, false);
+    b    = T_NEW(clp_option_t, t_new_option, "vverbose", "v", NULL, CLP_TYPE_BOOL, false, false);
     T_ADD(clp_add_command_option, root, a);
     T_ADD(clp_add_command_option, root, b);
 }
 static void test_duplicate_short_option_name_exits(void)
 {
-    ChildResult r = run_child(_err_duplicate_short_name);
+    child_result_t r = run_child(_err_duplicate_short_name);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "already registered"));
     D_TEST_NOT_NULL(strstr(r.err, "-v"));
@@ -2145,17 +2148,17 @@ static void test_duplicate_short_option_name_exits(void)
 /* required operand registered after optional one */
 static void _err_required_after_optional_operand(void)
 {
-    Command *root;
-    Operand *opt_op, *req_op;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    opt_op = T_NEW(Operand, t_new_operand, "optional", NULL, TYPE_STR, false);
-    req_op = T_NEW(Operand, t_new_operand, "required", NULL, TYPE_STR, true);
+    clp_command_t *root;
+    clp_operand_t *opt_op, *req_op;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    opt_op = T_NEW(clp_operand_t, t_new_operand, "optional", NULL, CLP_TYPE_STR, false);
+    req_op = T_NEW(clp_operand_t, t_new_operand, "required", NULL, CLP_TYPE_STR, true);
     T_ADD(clp_add_command_operand, root, opt_op);
     T_ADD(clp_add_command_operand, root, req_op);
 }
 static void test_required_operand_after_optional_exits(void)
 {
-    ChildResult r = run_child(_err_required_after_optional_operand);
+    child_result_t r = run_child(_err_required_after_optional_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "cannot follow optional operand"));
     D_TEST_NOT_NULL(strstr(r.err, "required"));
@@ -2165,11 +2168,11 @@ static void test_required_operand_after_optional_exits(void)
 /* invalid long option name at init: starts with hyphen */
 static void _err_long_opt_name_starts_with_hyphen(void)
 {
-    T_NEW(Option, t_new_option_raw, "-bad", "b", NULL, false, OPT_ACT_SET, (Value){0}, TYPE_BOOL, false, false, NULL);
+    T_NEW(clp_option_t, t_new_option_raw, "-bad", "b", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_BOOL, false, false, NULL);
 }
 static void test_long_opt_name_starting_with_hyphen_exits(void)
 {
-    ChildResult r = run_child(_err_long_opt_name_starts_with_hyphen);
+    child_result_t r = run_child(_err_long_opt_name_starts_with_hyphen);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "is not a valid option name"));
     D_TEST_NOT_NULL(strstr(r.err, "a long option must"));
@@ -2178,11 +2181,11 @@ static void test_long_opt_name_starting_with_hyphen_exits(void)
 /* invalid long option name at init: starts with underscore */
 static void _err_long_opt_name_starts_with_underscore(void)
 {
-    T_NEW(Option, t_new_option_raw, "_bad", "b", NULL, false, OPT_ACT_SET, (Value){0}, TYPE_BOOL, false, false, NULL);
+    T_NEW(clp_option_t, t_new_option_raw, "_bad", "b", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_BOOL, false, false, NULL);
 }
 static void test_long_opt_name_starting_with_underscore_exits(void)
 {
-    ChildResult r = run_child(_err_long_opt_name_starts_with_underscore);
+    child_result_t r = run_child(_err_long_opt_name_starts_with_underscore);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "is not a valid option name"));
     D_TEST_NOT_NULL(strstr(r.err, "a long option must"));
@@ -2191,11 +2194,11 @@ static void test_long_opt_name_starting_with_underscore_exits(void)
 /* invalid short option name at init: non-alphanumeric */
 static void _err_short_opt_name_invalid(void)
 {
-    T_NEW(Option, t_new_option_raw, "verbose", "!", NULL, false, OPT_ACT_SET, (Value){0}, TYPE_BOOL, false, false, NULL);
+    T_NEW(clp_option_t, t_new_option_raw, "verbose", "!", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_BOOL, false, false, NULL);
 }
 static void test_short_opt_name_non_alnum_exits(void)
 {
-    ChildResult r = run_child(_err_short_opt_name_invalid);
+    child_result_t r = run_child(_err_short_opt_name_invalid);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "is not a valid option name"));
     D_TEST_NOT_NULL(strstr(r.err, "alphanumeric"));
@@ -2204,11 +2207,11 @@ static void test_short_opt_name_non_alnum_exits(void)
 /* count action with non-usize type is rejected at init */
 static void _err_count_action_with_bool_type(void)
 {
-    T_NEW(Option, t_new_option_raw, "verbose", "v", NULL, false, OPT_ACT_COUNT, (Value){0}, TYPE_BOOL, false, false, NULL);
+    T_NEW(clp_option_t, t_new_option_raw, "verbose", "v", NULL, false, CLP_OPT_ACT_COUNT, (clp_value_t){0}, CLP_TYPE_BOOL, false, false, NULL);
 }
 static void test_count_action_with_non_usize_type_exits(void)
 {
-    ChildResult r = run_child(_err_count_action_with_bool_type);
+    child_result_t r = run_child(_err_count_action_with_bool_type);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "action 'count'"));
     D_TEST_NOT_NULL(strstr(r.err, "not valid"));
@@ -2218,11 +2221,11 @@ static void test_count_action_with_non_usize_type_exits(void)
 /* count action wrong type via short-only option (different format string branch) */
 static void _err_count_action_short_only_wrong_type(void)
 {
-    T_NEW(Option, t_new_option_raw, NULL, "v", NULL, false, OPT_ACT_COUNT, (Value){0}, TYPE_BOOL, false, false, NULL);
+    T_NEW(clp_option_t, t_new_option_raw, NULL, "v", NULL, false, CLP_OPT_ACT_COUNT, (clp_value_t){0}, CLP_TYPE_BOOL, false, false, NULL);
 }
 static void test_count_action_short_only_with_non_usize_type_exits(void)
 {
-    ChildResult r = run_child(_err_count_action_short_only_wrong_type);
+    child_result_t r = run_child(_err_count_action_short_only_wrong_type);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "action 'count'"));
     D_TEST_NOT_NULL(strstr(r.err, "not valid"));
@@ -2233,20 +2236,20 @@ static void test_count_action_short_only_with_non_usize_type_exits(void)
 /* parent-level option is not visible inside subcommand */
 static void _err_parent_opt_used_in_subcommand(void)
 {
-    Command *root, *add;
-    Option  *force;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    add   = T_NEW(Command, clp_new_command, 1, "add", NULL, NULL, NULL);
-    force = T_NEW(Option, t_new_option, "force", "f", NULL, TYPE_BOOL, false, false);
+    clp_command_t *root, *add;
+    clp_option_t  *force;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    add   = T_NEW(clp_command_t, clp_new_command, 1, "add", NULL, NULL, NULL);
+    force = T_NEW(clp_option_t, t_new_option, "force", "f", NULL, CLP_TYPE_BOOL, false, false);
     T_ADD(clp_add_command_option, root, force);
     T_ADD(clp_add_command_sub_command, root, add);
-    char    *argv[] = {"prog", "add", "--force", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "add", "--force", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_parent_option_not_visible_in_subcommand_exits(void)
 {
-    ChildResult r = run_child(_err_parent_opt_used_in_subcommand);
+    child_result_t r = run_child(_err_parent_opt_used_in_subcommand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "unknown option"));
     D_TEST_NOT_NULL(strstr(r.err, "--force"));
@@ -2256,20 +2259,20 @@ static void test_parent_option_not_visible_in_subcommand_exits(void)
 /* missing required option inside a subcommand */
 static void _err_missing_required_opt_in_subcommand(void)
 {
-    Command *root, *push;
-    Option  *token;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    push  = T_NEW(Command, clp_new_command, 1, "push", NULL, NULL, NULL);
-    token = T_NEW(Option, t_new_option, "token", "t", NULL, TYPE_STR, true, false);
+    clp_command_t *root, *push;
+    clp_option_t  *token;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    push  = T_NEW(clp_command_t, clp_new_command, 1, "push", NULL, NULL, NULL);
+    token = T_NEW(clp_option_t, t_new_option, "token", "t", NULL, CLP_TYPE_STR, true, false);
     T_ADD(clp_add_command_option, push, token);
     T_ADD(clp_add_command_sub_command, root, push);
-    char    *argv[] = {"prog", "push", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "push", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_missing_required_option_in_subcommand_exits(void)
 {
-    ChildResult r = run_child(_err_missing_required_opt_in_subcommand);
+    child_result_t r = run_child(_err_missing_required_opt_in_subcommand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following options were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "--token"));
@@ -2279,20 +2282,20 @@ static void test_missing_required_option_in_subcommand_exits(void)
 /* missing required operand inside a subcommand */
 static void _err_missing_required_operand_in_subcommand(void)
 {
-    Command *root, *cp;
-    Operand *dst;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    cp   = T_NEW(Command, clp_new_command, 1, "cp", NULL, NULL, NULL);
-    dst = T_NEW(Operand, t_new_operand, "dst", NULL, TYPE_STR, true);
+    clp_command_t *root, *cp;
+    clp_operand_t *dst;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    cp   = T_NEW(clp_command_t, clp_new_command, 1, "cp", NULL, NULL, NULL);
+    dst  = T_NEW(clp_operand_t, t_new_operand, "dst", NULL, CLP_TYPE_STR, true);
     T_ADD(clp_add_command_operand, cp, dst);
     T_ADD(clp_add_command_sub_command, root, cp);
-    char    *argv[] = {"prog", "cp", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "cp", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_missing_required_operand_in_subcommand_exits(void)
 {
-    ChildResult r = run_child(_err_missing_required_operand_in_subcommand);
+    child_result_t r = run_child(_err_missing_required_operand_in_subcommand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following operands were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "<dst>"));
@@ -2302,29 +2305,29 @@ static void test_missing_required_operand_in_subcommand_exits(void)
 /* duplicate operand name emits a warning but does NOT exit */
 static void _warn_duplicate_operand_name(void)
 {
-    Command *root;
-    Operand *a, *b;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    a = T_NEW(Operand, t_new_operand, "file", NULL, TYPE_STR, false);
-    b = T_NEW(Operand, t_new_operand, "file", NULL, TYPE_STR, false);
+    clp_command_t *root;
+    clp_operand_t *a, *b;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    a    = T_NEW(clp_operand_t, t_new_operand, "file", NULL, CLP_TYPE_STR, false);
+    b    = T_NEW(clp_operand_t, t_new_operand, "file", NULL, CLP_TYPE_STR, false);
     T_ADD(clp_add_command_operand, root, a);
     T_ADD(clp_add_command_operand, root, b);
 }
 static void test_duplicate_operand_name_warns_no_exit(void)
 {
     /* the warning itself is only printed when built with -DWARNING */
-    ChildResult r = run_child(_warn_duplicate_operand_name);
+    child_result_t r = run_child(_warn_duplicate_operand_name);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
 }
 
-/* ── builder status tests (no exit, status + ClpError returned) ─────────── */
+/* ── builder status tests (no exit, status + clp_error_t returned) ─────────── */
 
 static void test_builder_duplicate_long_returns_status(void)
 {
-    ClpError err;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *a    = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, false);
-    Option  *b    = T_NEW(Option, t_new_option, "verbose", "w", NULL, TYPE_BOOL, false, false);
+    clp_error_t    err;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *a    = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, false);
+    clp_option_t  *b    = T_NEW(clp_option_t, t_new_option, "verbose", "w", NULL, CLP_TYPE_BOOL, false, false);
     D_TEST_EXPR(clp_add_command_option(root, a, &err) == CLP_OK);
     D_TEST_EXPR(clp_add_command_option(root, b, &err) == CLP_ERR_DUPLICATE);
     D_TEST_EXPR(err.code == CLP_ERR_DUPLICATE);
@@ -2337,27 +2340,27 @@ static void test_builder_duplicate_long_returns_status(void)
 
 static void test_builder_invalid_names_return_status(void)
 {
-    ClpError err;
-    Option  *opt     = (Option *) 1;
-    Operand *operand = (Operand *) 1;
-    D_TEST_EXPR(t_new_option(&opt, "-bad", NULL, NULL, TYPE_BOOL, false, false, &err) == CLP_ERR_INVALID_NAME);
+    clp_error_t    err;
+    clp_option_t  *opt     = (clp_option_t *) 1;
+    clp_operand_t *operand = (clp_operand_t *) 1;
+    D_TEST_EXPR(t_new_option(&opt, "-bad", NULL, NULL, CLP_TYPE_BOOL, false, false, &err) == CLP_ERR_INVALID_NAME);
     D_TEST_EXPR(opt == NULL);
     D_TEST_EXPR(err.code == CLP_ERR_INVALID_NAME);
     D_TEST_EXPR(err.command == NULL);
-    D_TEST_EXPR(t_new_option(&opt, NULL, "!", NULL, TYPE_BOOL, false, false, &err) == CLP_ERR_INVALID_NAME);
-    D_TEST_EXPR(t_new_option(&opt, "help", NULL, NULL, TYPE_BOOL, false, false, &err) == CLP_ERR_RESERVED_NAME);
-    D_TEST_EXPR(t_new_option_raw(&opt, "n", NULL, NULL, false, OPT_ACT_COUNT, (Value) {0}, TYPE_STR, false, false, NULL, &err) == CLP_ERR_INVALID_TYPE);
-    D_TEST_EXPR(t_new_operand(&operand, "_x", NULL, TYPE_STR, false, NULL) == CLP_ERR_INVALID_NAME);
+    D_TEST_EXPR(t_new_option(&opt, NULL, "!", NULL, CLP_TYPE_BOOL, false, false, &err) == CLP_ERR_INVALID_NAME);
+    D_TEST_EXPR(t_new_option(&opt, "help", NULL, NULL, CLP_TYPE_BOOL, false, false, &err) == CLP_ERR_RESERVED_NAME);
+    D_TEST_EXPR(t_new_option_raw(&opt, "n", NULL, NULL, false, CLP_OPT_ACT_COUNT, (clp_value_t){0}, CLP_TYPE_STR, false, false, NULL, &err) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(t_new_operand(&operand, "_x", NULL, CLP_TYPE_STR, false, NULL) == CLP_ERR_INVALID_NAME);
     D_TEST_EXPR(operand == NULL);
 }
 
 static void test_builder_conflict_and_order_return_status(void)
 {
-    ClpError err;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Command *sub  = T_NEW(Command, clp_new_command, 1, "sub", NULL, NULL, NULL);
-    Operand *opt  = T_NEW(Operand, t_new_operand, "optional", NULL, TYPE_STR, false);
-    Operand *req  = T_NEW(Operand, t_new_operand, "required", NULL, TYPE_STR, true);
+    clp_error_t    err;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *sub  = T_NEW(clp_command_t, clp_new_command, 1, "sub", NULL, NULL, NULL);
+    clp_operand_t *opt  = T_NEW(clp_operand_t, t_new_operand, "optional", NULL, CLP_TYPE_STR, false);
+    clp_operand_t *req  = T_NEW(clp_operand_t, t_new_operand, "required", NULL, CLP_TYPE_STR, true);
     D_TEST_EXPR(clp_add_command_operand(root, opt, &err) == CLP_OK);
     D_TEST_EXPR(clp_add_command_operand(root, req, &err) == CLP_ERR_OPERAND_ORDER);
     D_TEST_NOT_NULL(strstr(err.message, "cannot follow optional operand"));
@@ -2382,11 +2385,11 @@ static void test_status_to_str_covers_builder_codes(void)
 /* invalid long option name: contains a space (invalid mid-name char) */
 static void _err_long_opt_name_invalid_chars(void)
 {
-    T_NEW(Option, t_new_option_raw, "bad name", "b", NULL, false, OPT_ACT_SET, (Value){0}, TYPE_BOOL, false, false, NULL);
+    T_NEW(clp_option_t, t_new_option_raw, "bad name", "b", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_BOOL, false, false, NULL);
 }
 static void test_long_opt_name_with_invalid_chars_exits(void)
 {
-    ChildResult r = run_child(_err_long_opt_name_invalid_chars);
+    child_result_t r = run_child(_err_long_opt_name_invalid_chars);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "is not a valid option name"));
     D_TEST_NOT_NULL(strstr(r.err, "a long option must"));
@@ -2395,142 +2398,142 @@ static void test_long_opt_name_with_invalid_chars_exits(void)
 /* short option requires argument but is the last token (short prefix in msg) */
 static void _err_short_opt_no_value(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    output = T_NEW(Option, t_new_option, "output", "o", NULL, TYPE_STR, false, false);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    output = T_NEW(clp_option_t, t_new_option, "output", "o", NULL, CLP_TYPE_STR, false, false);
     T_ADD(clp_add_command_option, root, output);
-    char    *argv[] = {"prog", "-o", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-o", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_short_opt_missing_value_exits(void)
 {
-    ChildResult r = run_child(_err_short_opt_no_value);
+    child_result_t r = run_child(_err_short_opt_no_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "option require an argument"));
     D_TEST_NOT_NULL(strstr(r.err, "-o"));
 }
 
-/* invalid value delivered via short form: -j abc where j is TYPE_USIZE */
+/* invalid value delivered via short form: -j abc where j is CLP_TYPE_USIZE */
 static void _err_invalid_value_via_short_opt(void)
 {
-    Command *root;
-    Option  *jobs;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    jobs = T_NEW(Option, t_new_option, "jobs", "j", NULL, TYPE_USIZE, false, false);
+    clp_command_t *root;
+    clp_option_t  *jobs;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    jobs = T_NEW(clp_option_t, t_new_option, "jobs", "j", NULL, CLP_TYPE_USIZE, false, false);
     T_ADD(clp_add_command_option, root, jobs);
-    char    *argv[] = {"prog", "-j", "abc", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-j", "abc", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_value_via_short_opt_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_value_via_short_opt);
+    child_result_t r = run_child(_err_invalid_value_via_short_opt);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "invalid value"));
     D_TEST_NOT_NULL(strstr(r.err, "abc"));
     D_TEST_NOT_NULL(strstr(r.err, "-j"));
 }
 
-/* invalid value for TYPE_DOUBLE option */
+/* invalid value for CLP_TYPE_DOUBLE option */
 static void _err_invalid_double_opt_value(void)
 {
-    Command *root;
-    Option  *rate;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    rate = T_NEW(Option, t_new_option, "rate", "r", NULL, TYPE_DOUBLE, false, false);
+    clp_command_t *root;
+    clp_option_t  *rate;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    rate = T_NEW(clp_option_t, t_new_option, "rate", "r", NULL, CLP_TYPE_DOUBLE, false, false);
     T_ADD(clp_add_command_option, root, rate);
-    char    *argv[] = {"prog", "--rate", "notadouble", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--rate", "notadouble", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_double_option_value_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_double_opt_value);
+    child_result_t r = run_child(_err_invalid_double_opt_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "invalid value"));
     D_TEST_NOT_NULL(strstr(r.err, "notadouble"));
     D_TEST_NOT_NULL(strstr(r.err, "--rate"));
 }
 
-/* invalid value for a TYPE_USIZE operand */
+/* invalid value for a CLP_TYPE_USIZE operand */
 static void _err_invalid_usize_operand(void)
 {
-    Command *root;
-    Operand *count;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    count = T_NEW(Operand, t_new_operand, "count", NULL, TYPE_USIZE, false);
+    clp_command_t *root;
+    clp_operand_t *count;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    count = T_NEW(clp_operand_t, t_new_operand, "count", NULL, CLP_TYPE_USIZE, false);
     T_ADD(clp_add_command_operand, root, count);
-    char    *argv[] = {"prog", "notanumber", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "notanumber", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_usize_operand_value_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_usize_operand);
+    child_result_t r = run_child(_err_invalid_usize_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "invalid value"));
     D_TEST_NOT_NULL(strstr(r.err, "notanumber"));
     D_TEST_NOT_NULL(strstr(r.err, "<count>"));
 }
 
-/* invalid value for a TYPE_LONG operand */
+/* invalid value for a CLP_TYPE_LONG operand */
 static void _err_invalid_long_operand(void)
 {
-    Command *root;
-    Operand *offset;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    offset = T_NEW(Operand, t_new_operand, "offset", NULL, TYPE_LONG, false);
+    clp_command_t *root;
+    clp_operand_t *offset;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    offset = T_NEW(clp_operand_t, t_new_operand, "offset", NULL, CLP_TYPE_LONG, false);
     T_ADD(clp_add_command_operand, root, offset);
-    char    *argv[] = {"prog", "xyz", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "xyz", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_long_operand_value_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_long_operand);
+    child_result_t r = run_child(_err_invalid_long_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "invalid value"));
     D_TEST_NOT_NULL(strstr(r.err, "xyz"));
     D_TEST_NOT_NULL(strstr(r.err, "<offset>"));
 }
 
-/* invalid value for a TYPE_CHAR operand (too many chars) */
+/* invalid value for a CLP_TYPE_CHAR operand (too many chars) */
 static void _err_invalid_char_operand(void)
 {
-    Command *root;
-    Operand *delim;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    delim = T_NEW(Operand, t_new_operand, "delim", NULL, TYPE_CHAR, false);
+    clp_command_t *root;
+    clp_operand_t *delim;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    delim = T_NEW(clp_operand_t, t_new_operand, "delim", NULL, CLP_TYPE_CHAR, false);
     T_ADD(clp_add_command_operand, root, delim);
-    char    *argv[] = {"prog", "ab", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "ab", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_char_operand_value_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_char_operand);
+    child_result_t r = run_child(_err_invalid_char_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "too many characters"));
     D_TEST_NOT_NULL(strstr(r.err, "<delim>"));
 }
 
-/* invalid value for a TYPE_DOUBLE operand */
+/* invalid value for a CLP_TYPE_DOUBLE operand */
 static void _err_invalid_double_operand(void)
 {
-    Command *root;
-    Operand *scale;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    scale = T_NEW(Operand, t_new_operand, "scale", NULL, TYPE_DOUBLE, false);
+    clp_command_t *root;
+    clp_operand_t *scale;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    scale = T_NEW(clp_operand_t, t_new_operand, "scale", NULL, CLP_TYPE_DOUBLE, false);
     T_ADD(clp_add_command_operand, root, scale);
-    char    *argv[] = {"prog", "notdouble", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "notdouble", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_invalid_double_operand_value_exits(void)
 {
-    ChildResult r = run_child(_err_invalid_double_operand);
+    child_result_t r = run_child(_err_invalid_double_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "invalid value"));
     D_TEST_NOT_NULL(strstr(r.err, "notdouble"));
@@ -2557,20 +2560,20 @@ static const char *check_port_range(const void *p)
 static const char *check_no_dot_str(const void *p)
 {
     checker_calls++;
-    DStringView s = *(const DStringView *) p;
+    d_string_view_t s = *(const d_string_view_t *) p;
     return memchr(s.data, '.', s.size) == NULL ? NULL : "must not contain '.'";
 }
 
 /* option checker accepts a valid value: parse succeeds and value is stored */
 static void test_option_checker_accepts_valid_value(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *num  = T_NEW(Option, t_new_option_raw, "num", "n", NULL, false, OPT_ACT_SET, (Value) {0}, TYPE_LONG, false, false, check_positive_long);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *num  = T_NEW(clp_option_t, t_new_option_raw, "num", "n", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_LONG, false, false, check_positive_long);
     T_ADD(clp_add_command_option, root, num);
-    char    *argv[] = {"prog", "--num", "42", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", "--num", "42", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(checker_calls == 1);
     D_TEST_EXPR(num->value_set == true);
@@ -2581,13 +2584,13 @@ static void test_option_checker_accepts_valid_value(void)
 /* option checker rejects: CLP_ERR_BAD_VALUE with the checker's message */
 static void test_option_checker_rejects_value(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *num  = T_NEW(Option, t_new_option_raw, "num", "n", NULL, false, OPT_ACT_SET, (Value) {0}, TYPE_LONG, false, false, check_positive_long);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *num  = T_NEW(clp_option_t, t_new_option_raw, "num", "n", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_LONG, false, false, check_positive_long);
     T_ADD(clp_add_command_option, root, num);
-    char    *argv[] = {"prog", "--num", "-3", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", "--num", "-3", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_EXPR(e.code == CLP_ERR_BAD_VALUE);
     D_TEST_EXPR(checker_calls == 1);
@@ -2601,12 +2604,12 @@ static void test_option_checker_rejects_value(void)
 /* option checker rejects a value given through the short form */
 static void test_option_checker_rejects_short_form(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *port = T_NEW(Option, t_new_option_raw, "port", "p", NULL, false, OPT_ACT_SET, (Value) {0}, TYPE_USIZE, false, false, check_port_range);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *port = T_NEW(clp_option_t, t_new_option_raw, "port", "p", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_USIZE, false, false, check_port_range);
     T_ADD(clp_add_command_option, root, port);
-    char    *argv[] = {"prog", "-p", "70000", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-p", "70000", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_NOT_NULL(strstr(e.message, "-p"));
     D_TEST_NOT_NULL(strstr(e.message, "70000"));
@@ -2617,20 +2620,20 @@ static void test_option_checker_rejects_short_form(void)
 /* checker sees the parsed string value */
 static void test_option_checker_on_string_value(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *name = T_NEW(Option, t_new_option_raw, "name", NULL, NULL, false, OPT_ACT_SET, (Value) {0}, TYPE_STR, false, false, check_no_dot_str);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *name = T_NEW(clp_option_t, t_new_option_raw, "name", NULL, NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_STR, false, false, check_no_dot_str);
     T_ADD(clp_add_command_option, root, name);
-    char    *ok_argv[]  = {"prog", "--name", "alice", NULL};
-    char    *bad_argv[] = {"prog", "--name", "a.b", NULL};
-    Command *cmd        = NULL;
+    char          *ok_argv[]  = {"prog", "--name", "alice", NULL};
+    char          *bad_argv[] = {"prog", "--name", "a.b", NULL};
+    clp_command_t *cmd        = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, ok_argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(TV(name).value_d_string_view.size == 5);
     D_TEST_EXPR(memcmp(TV(name).value_d_string_view.data, "alice", 5) == 0);
     clp_cleanup(root);
 
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    name = T_NEW(Option, t_new_option_raw, "name", NULL, NULL, false, OPT_ACT_SET, (Value) {0}, TYPE_STR, false, false, check_no_dot_str);
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    name = T_NEW(clp_option_t, t_new_option_raw, "name", NULL, NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_STR, false, false, check_no_dot_str);
     T_ADD(clp_add_command_option, root, name);
     cmd = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, bad_argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
@@ -2641,13 +2644,13 @@ static void test_option_checker_on_string_value(void)
 /* checker is not called when the type conversion already failed */
 static void test_option_checker_skipped_on_conversion_error(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *num  = T_NEW(Option, t_new_option_raw, "num", "n", NULL, false, OPT_ACT_SET, (Value) {0}, TYPE_LONG, false, false, check_positive_long);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *num  = T_NEW(clp_option_t, t_new_option_raw, "num", "n", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_LONG, false, false, check_positive_long);
     T_ADD(clp_add_command_option, root, num);
-    char    *argv[] = {"prog", "--num", "abc", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", "--num", "abc", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_EXPR(checker_calls == 0);
     D_TEST_EXPR(strstr(e.message, "must be positive") == NULL);
@@ -2657,13 +2660,13 @@ static void test_option_checker_skipped_on_conversion_error(void)
 /* checker is not called when the option is absent; default value is kept */
 static void test_option_checker_not_called_when_absent(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *num  = T_NEW(Option, t_new_option_raw, "num", "n", NULL, true, OPT_ACT_SET, (Value) {.value_long = -1}, TYPE_LONG, false, false, check_positive_long);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *num  = T_NEW(clp_option_t, t_new_option_raw, "num", "n", NULL, true, CLP_OPT_ACT_SET, (clp_value_t){.value_long = -1}, CLP_TYPE_LONG, false, false, check_positive_long);
     T_ADD(clp_add_command_option, root, num);
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(checker_calls == 0);
     D_TEST_EXPR(TV(num).value_long == -1);
@@ -2673,8 +2676,8 @@ static void test_option_checker_not_called_when_absent(void)
 /* convenience macros leave the checker unset */
 static void test_option_macro_has_no_checker(void)
 {
-    Option  *opt     = init_str_opt("name", "n", false);
-    Operand *operand = init_str_operand("file", false);
+    clp_option_t  *opt     = init_str_opt("name", "n", false);
+    clp_operand_t *operand = init_str_operand("file", false);
     D_TEST_EXPR(opt->checker == NULL);
     D_TEST_EXPR(operand->checker == NULL);
     clp_free_option(opt);
@@ -2684,13 +2687,13 @@ static void test_option_macro_has_no_checker(void)
 /* operand checker accepts a valid value */
 static void test_operand_checker_accepts_valid_value(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Operand *port = T_NEW(Operand, t_new_operand_raw, "port", NULL, false, OPERAND_ACT_SET, (Value) {0}, TYPE_USIZE, true, check_port_range);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_operand_t *port = T_NEW(clp_operand_t, t_new_operand_raw, "port", NULL, false, CLP_OPERAND_ACT_SET, (clp_value_t){0}, CLP_TYPE_USIZE, true, check_port_range);
     T_ADD(clp_add_command_operand, root, port);
-    char    *argv[] = {"prog", "8080", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", "8080", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(checker_calls == 1);
     D_TEST_EXPR(port->value_set == true);
@@ -2701,12 +2704,12 @@ static void test_operand_checker_accepts_valid_value(void)
 /* operand checker rejects: error names the operand and carries the message */
 static void test_operand_checker_rejects_value(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Operand *port = T_NEW(Operand, t_new_operand_raw, "port", NULL, false, OPERAND_ACT_SET, (Value) {0}, TYPE_USIZE, true, check_port_range);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_operand_t *port = T_NEW(clp_operand_t, t_new_operand_raw, "port", NULL, false, CLP_OPERAND_ACT_SET, (clp_value_t){0}, CLP_TYPE_USIZE, true, check_port_range);
     T_ADD(clp_add_command_operand, root, port);
-    char    *argv[] = {"prog", "0", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "0", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_NOT_NULL(strstr(e.message, "<port>"));
     D_TEST_NOT_NULL(strstr(e.message, "port out of range"));
@@ -2716,16 +2719,16 @@ static void test_operand_checker_rejects_value(void)
 /* clp_parse_args exits with failure when a checker rejects */
 static void _err_option_checker_rejects(void)
 {
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *num  = T_NEW(Option, t_new_option_raw, "num", "n", NULL, false, OPT_ACT_SET, (Value) {0}, TYPE_LONG, false, false, check_positive_long);
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *num  = T_NEW(clp_option_t, t_new_option_raw, "num", "n", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_LONG, false, false, check_positive_long);
     T_ADD(clp_add_command_option, root, num);
-    char    *argv[] = {"prog", "--num", "0", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--num", "0", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_option_checker_reject_exits(void)
 {
-    ChildResult r = run_child(_err_option_checker_rejects);
+    child_result_t r = run_child(_err_option_checker_rejects);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "must be positive"));
     D_TEST_NOT_NULL(strstr(r.err, "--num"));
@@ -2734,13 +2737,13 @@ static void test_option_checker_reject_exits(void)
 /* _checked macros: checker is stored and runs on parse */
 static void test_option_checked_macro_rejects_value(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *num  = T_NEW(Option, t_new_option_checked, "num", "n", NULL, TYPE_LONG, false, false, check_positive_long);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *num  = T_NEW(clp_option_t, t_new_option_checked, "num", "n", NULL, CLP_TYPE_LONG, false, false, check_positive_long);
     T_ADD(clp_add_command_option, root, num);
     D_TEST_EXPR(num->checker == check_positive_long);
-    char    *argv[] = {"prog", "-n", "-1", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-n", "-1", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_NOT_NULL(strstr(e.message, "must be positive"));
     clp_cleanup(root);
@@ -2749,19 +2752,19 @@ static void test_option_checked_macro_rejects_value(void)
 /* _default_*_checked option: default kept when absent, override is checked */
 static void test_option_default_checked_macro(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *port = T_NEW(Option, t_new_option_default_usize_checked, "port", "p", NULL, 8080, false, false, check_port_range);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *port = T_NEW(clp_option_t, t_new_option_default_usize_checked, "port", "p", NULL, 8080, false, false, check_port_range);
     T_ADD(clp_add_command_option, root, port);
     D_TEST_EXPR(port->checker == check_port_range);
-    char    *absent[] = {"prog", NULL};
-    Command *cmd      = NULL;
+    char          *absent[] = {"prog", NULL};
+    clp_command_t *cmd      = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, absent, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(TV(port).value_usize == 8080);
     clp_cleanup(root);
 
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    port = T_NEW(Option, t_new_option_default_usize_checked, "port", "p", NULL, 8080, false, false, check_port_range);
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    port = T_NEW(clp_option_t, t_new_option_default_usize_checked, "port", "p", NULL, 8080, false, false, check_port_range);
     T_ADD(clp_add_command_option, root, port);
     char *bad[] = {"prog", "--port", "0", NULL};
     cmd         = NULL;
@@ -2774,7 +2777,7 @@ static void test_option_default_checked_macro(void)
 /* _default_str_checked option keeps the string default */
 static void test_option_default_str_checked_macro(void)
 {
-    Option *name = T_NEW(Option, t_new_option_default_str_checked, "name", NULL, NULL, "bob", false, false, check_no_dot_str);
+    clp_option_t *name = T_NEW(clp_option_t, t_new_option_default_str_checked, "name", NULL, NULL, "bob", false, false, check_no_dot_str);
     D_TEST_EXPR(name->checker == check_no_dot_str);
     D_TEST_EXPR(TV(name).value_d_string_view.size == 3);
     D_TEST_EXPR(memcmp(TV(name).value_d_string_view.data, "bob", 3) == 0);
@@ -2784,18 +2787,18 @@ static void test_option_default_str_checked_macro(void)
 /* operand _checked macros */
 static void test_operand_checked_macros(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Operand *port = T_NEW(Operand, t_new_operand_checked, "port", NULL, TYPE_USIZE, true, check_port_range);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_operand_t *port = T_NEW(clp_operand_t, t_new_operand_checked, "port", NULL, CLP_TYPE_USIZE, true, check_port_range);
     T_ADD(clp_add_command_operand, root, port);
     D_TEST_EXPR(port->checker == check_port_range);
-    char    *bad[] = {"prog", "99999", NULL};
-    Command *cmd   = NULL;
+    char          *bad[] = {"prog", "99999", NULL};
+    clp_command_t *cmd   = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, bad, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_NOT_NULL(strstr(e.message, "<port>"));
     clp_cleanup(root);
 
-    Operand *lvl = T_NEW(Operand, t_new_operand_default_long_checked, "level", NULL, 3, false, check_positive_long);
+    clp_operand_t *lvl = T_NEW(clp_operand_t, t_new_operand_default_long_checked, "level", NULL, 3, false, check_positive_long);
     D_TEST_EXPR(lvl->checker == check_positive_long);
     D_TEST_EXPR(TV(lvl).value_long == 3);
     clp_free_operand(lvl);
@@ -2804,23 +2807,23 @@ static void test_operand_checked_macros(void)
 /* list option: every comma-separated item and every repetition is checked */
 static void test_list_option_checker_checks_each_item(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *tags = T_NEW(Option, t_new_option_list_checked, "tag", "t", NULL, false, false, check_no_dot_str);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *tags = T_NEW(clp_option_t, t_new_option_list_checked, "tag", "t", NULL, false, false, check_no_dot_str);
     T_ADD(clp_add_command_option, root, tags);
-    char    *ok[]   = {"prog", "--tag", "a,b", "-t", "c", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *ok[] = {"prog", "--tag", "a,b", "-t", "c", NULL};
+    clp_command_t *cmd  = NULL;
+    checker_calls       = 0;
     D_TEST_EXPR(clp_try_parse_args(root, ok, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(checker_calls == 3);
     D_TEST_EXPR(d_dyn_array_get_size(&TV(tags).value_list) == 3);
     clp_cleanup(root);
 
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    tags = T_NEW(Option, t_new_option_list_checked, "tag", "t", NULL, false, false, check_no_dot_str);
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    tags = T_NEW(clp_option_t, t_new_option_list_checked, "tag", "t", NULL, false, false, check_no_dot_str);
     T_ADD(clp_add_command_option, root, tags);
-    char *bad[] = {"prog", "--tag", "good,x.y,never", NULL};
-    cmd         = NULL;
+    char *bad[]   = {"prog", "--tag", "good,x.y,never", NULL};
+    cmd           = NULL;
     checker_calls = 0;
     D_TEST_EXPR(clp_try_parse_args(root, bad, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_EXPR(checker_calls == 2);
@@ -2834,18 +2837,18 @@ static void test_list_option_checker_checks_each_item(void)
 /* list operand: each item is checked */
 static void test_list_operand_checker_checks_each_item(void)
 {
-    ClpError e;
-    Command *root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Operand *files = T_NEW(Operand, t_new_operand_list_checked, "files", NULL, true, check_no_dot_str);
+    clp_error_t    e;
+    clp_command_t *root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_operand_t *files = T_NEW(clp_operand_t, t_new_operand_list_checked, "files", NULL, true, check_no_dot_str);
     T_ADD(clp_add_command_operand, root, files);
-    char    *ok[] = {"prog", "a", "b", NULL};
-    Command *cmd  = NULL;
+    char          *ok[] = {"prog", "a", "b", NULL};
+    clp_command_t *cmd  = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, ok, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(d_dyn_array_get_size(&TV(files).value_list) == 2);
     clp_cleanup(root);
 
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    files = T_NEW(Operand, t_new_operand_list_checked, "files", NULL, true, check_no_dot_str);
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    files = T_NEW(clp_operand_t, t_new_operand_list_checked, "files", NULL, true, check_no_dot_str);
     T_ADD(clp_add_command_operand, root, files);
     char *bad[] = {"prog", "a", "b.c", NULL};
     cmd         = NULL;
@@ -2859,7 +2862,7 @@ static void test_list_operand_checker_checks_each_item(void)
 static const char *check_env_pair(const void *p)
 {
     checker_calls++;
-    const ClpKeyValue *kv = p;
+    const clp_key_value_t *kv = p;
     for (usize i = 0; i < kv->key.size; i++)
         if (kv->key.data[i] < 'A' || kv->key.data[i] > 'Z')
             return "key must be upper-case";
@@ -2871,14 +2874,14 @@ static const char *check_env_pair(const void *p)
 /* kv option: checker sees each pair split into key and value */
 static void test_kv_option_checker_accepts_pairs(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *env  = T_NEW(Option, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *env  = T_NEW(clp_option_t, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
     T_ADD(clp_add_command_option, root, env);
     D_TEST_EXPR(env->checker == check_env_pair);
-    char    *argv[] = {"prog", "--env", "HOME=x,USER=bob", "-e", "PATH=bin", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", "--env", "HOME=x,USER=bob", "-e", "PATH=bin", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(checker_calls == 3);
     D_TEST_EXPR(d_unordered_map_get_size(&TV(env).value_kv) == 3);
@@ -2888,13 +2891,13 @@ static void test_kv_option_checker_accepts_pairs(void)
 /* kv option: bad key rejected, error shows the whole pair; later pairs skipped */
 static void test_kv_option_checker_rejects_key(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *env  = T_NEW(Option, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *env  = T_NEW(clp_option_t, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
     T_ADD(clp_add_command_option, root, env);
-    char    *argv[] = {"prog", "--env", "HOME=x,user=bob,NEVER=y", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", "--env", "HOME=x,user=bob,NEVER=y", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_EXPR(checker_calls == 2);
     D_TEST_NOT_NULL(strstr(e.message, "'user=bob'"));
@@ -2907,12 +2910,12 @@ static void test_kv_option_checker_rejects_key(void)
 /* kv option: bad value rejected */
 static void test_kv_option_checker_rejects_value(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *env  = T_NEW(Option, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *env  = T_NEW(clp_option_t, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
     T_ADD(clp_add_command_option, root, env);
-    char    *argv[] = {"prog", "-e", "HOST=a.b", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-e", "HOST=a.b", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_NOT_NULL(strstr(e.message, "'HOST=a.b'"));
     D_TEST_NOT_NULL(strstr(e.message, "value must not contain '.'"));
@@ -2922,13 +2925,13 @@ static void test_kv_option_checker_rejects_value(void)
 /* kv: malformed pairs are still reported as CLP_ERR_BAD_KV, checker not called */
 static void test_kv_checker_not_called_on_malformed_pair(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *env  = T_NEW(Option, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *env  = T_NEW(clp_option_t, t_new_option_kv_checked, "env", "e", NULL, false, false, check_env_pair);
     T_ADD(clp_add_command_option, root, env);
-    char    *argv[] = {"prog", "--env", "NOEQUALS", NULL};
-    Command *cmd    = NULL;
-    checker_calls   = 0;
+    char          *argv[] = {"prog", "--env", "NOEQUALS", NULL};
+    clp_command_t *cmd    = NULL;
+    checker_calls         = 0;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_KV);
     D_TEST_EXPR(checker_calls == 0);
     clp_cleanup(root);
@@ -2937,18 +2940,18 @@ static void test_kv_checker_not_called_on_malformed_pair(void)
 /* kv operand: checker runs and error names the operand */
 static void test_kv_operand_checker(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Operand *vars = T_NEW(Operand, t_new_operand_kv_checked, "vars", NULL, true, check_env_pair);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_operand_t *vars = T_NEW(clp_operand_t, t_new_operand_kv_checked, "vars", NULL, true, check_env_pair);
     T_ADD(clp_add_command_operand, root, vars);
-    char    *ok[] = {"prog", "A=1,B=2", NULL};
-    Command *cmd  = NULL;
+    char          *ok[] = {"prog", "A=1,B=2", NULL};
+    clp_command_t *cmd  = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, ok, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(d_unordered_map_get_size(&TV(vars).value_kv) == 2);
     clp_cleanup(root);
 
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    vars = T_NEW(Operand, t_new_operand_kv_checked, "vars", NULL, true, check_env_pair);
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    vars = T_NEW(clp_operand_t, t_new_operand_kv_checked, "vars", NULL, true, check_env_pair);
     T_ADD(clp_add_command_operand, root, vars);
     char *bad[] = {"prog", "a=1", NULL};
     cmd         = NULL;
@@ -2961,20 +2964,20 @@ static void test_kv_operand_checker(void)
 /* multiple missing required options: all listed before exit */
 static void _err_multiple_missing_required_opts(void)
 {
-    Command *root;
-    Option  *output, *config;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    output = T_NEW(Option, t_new_option, "output", "o", NULL, TYPE_STR, true, false);
-    config = T_NEW(Option, t_new_option, "config", "c", NULL, TYPE_STR, true, false);
+    clp_command_t *root;
+    clp_option_t  *output, *config;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    output = T_NEW(clp_option_t, t_new_option, "output", "o", NULL, CLP_TYPE_STR, true, false);
+    config = T_NEW(clp_option_t, t_new_option, "config", "c", NULL, CLP_TYPE_STR, true, false);
     T_ADD(clp_add_command_option, root, output);
     T_ADD(clp_add_command_option, root, config);
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_multiple_missing_required_options_exits(void)
 {
-    ChildResult r = run_child(_err_multiple_missing_required_opts);
+    child_result_t r = run_child(_err_multiple_missing_required_opts);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following options were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "--output"));
@@ -2984,20 +2987,20 @@ static void test_multiple_missing_required_options_exits(void)
 /* multiple missing required operands: all listed before exit */
 static void _err_multiple_missing_required_operands(void)
 {
-    Command *root;
-    Operand *src, *dst;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    src = T_NEW(Operand, t_new_operand, "src", NULL, TYPE_STR, true);
-    dst = T_NEW(Operand, t_new_operand, "dst", NULL, TYPE_STR, true);
+    clp_command_t *root;
+    clp_operand_t *src, *dst;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    src  = T_NEW(clp_operand_t, t_new_operand, "src", NULL, CLP_TYPE_STR, true);
+    dst  = T_NEW(clp_operand_t, t_new_operand, "dst", NULL, CLP_TYPE_STR, true);
     T_ADD(clp_add_command_operand, root, src);
     T_ADD(clp_add_command_operand, root, dst);
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_multiple_missing_required_operands_exits(void)
 {
-    ChildResult r = run_child(_err_multiple_missing_required_operands);
+    child_result_t r = run_child(_err_multiple_missing_required_operands);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "the following operands were not provided"));
     D_TEST_NOT_NULL(strstr(r.err, "<src>"));
@@ -3007,18 +3010,18 @@ static void test_multiple_missing_required_operands_exits(void)
 /* unknown option in combined short token */
 static void _err_unknown_short_in_combined(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    verbose = T_NEW(Option, t_new_option, "verbose", "v", NULL, TYPE_BOOL, false, false);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    verbose = T_NEW(clp_option_t, t_new_option, "verbose", "v", NULL, CLP_TYPE_BOOL, false, false);
     T_ADD(clp_add_command_option, root, verbose);
-    char    *argv[] = {"prog", "-vz", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-vz", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_unknown_short_in_combined_token_exits(void)
 {
-    ChildResult r = run_child(_err_unknown_short_in_combined);
+    child_result_t r = run_child(_err_unknown_short_in_combined);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "unknown option"));
     D_TEST_NOT_NULL(strstr(r.err, "-z"));
@@ -3029,18 +3032,18 @@ static void test_unknown_short_in_combined_token_exits(void)
 /* usage line is printed to stderr when required option is missing (no args) */
 static void _usage_missing_required_opt(void)
 {
-    Command *root;
-    Option  *output;
-    root   = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    output = T_NEW(Option, t_new_option, "output", "o", NULL, TYPE_STR, true, false);
+    clp_command_t *root;
+    clp_option_t  *output;
+    root   = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    output = T_NEW(clp_option_t, t_new_option, "output", "o", NULL, CLP_TYPE_STR, true, false);
     T_ADD(clp_add_command_option, root, output);
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_usage_line_in_stderr_on_missing_required_option(void)
 {
-    ChildResult r = run_child(_usage_missing_required_opt);
+    child_result_t r = run_child(_usage_missing_required_opt);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "Usage:"));
     D_TEST_NOT_NULL(strstr(r.err, "prog"));
@@ -3049,7 +3052,7 @@ static void test_usage_line_in_stderr_on_missing_required_option(void)
 /* "For more information, try '--help'." is printed alongside the usage line */
 static void test_for_more_info_hint_on_missing_required_option(void)
 {
-    ChildResult r = run_child(_usage_missing_required_opt);
+    child_result_t r = run_child(_usage_missing_required_opt);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "For more information, try '--help'."));
 }
@@ -3057,18 +3060,18 @@ static void test_for_more_info_hint_on_missing_required_option(void)
 /* usage line is printed to stderr when required operand is missing (no args) */
 static void _usage_missing_required_operand(void)
 {
-    Command *root;
-    Operand *file;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    file = T_NEW(Operand, t_new_operand, "file", NULL, TYPE_STR, true);
+    clp_command_t *root;
+    clp_operand_t *file;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    file = T_NEW(clp_operand_t, t_new_operand, "file", NULL, CLP_TYPE_STR, true);
     T_ADD(clp_add_command_operand, root, file);
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_usage_line_in_stderr_on_missing_required_operand(void)
 {
-    ChildResult r = run_child(_usage_missing_required_operand);
+    child_result_t r = run_child(_usage_missing_required_operand);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "Usage:"));
     D_TEST_NOT_NULL(strstr(r.err, "prog"));
@@ -3078,15 +3081,15 @@ static void test_usage_line_in_stderr_on_missing_required_operand(void)
 /* usage line in --help output contains "Usage:" and the command name */
 static void _usage_in_help_output(void)
 {
-    Command *root;
-    root            = T_NEW(Command, clp_new_command, 0, "mytool", "a test tool", NULL, NULL);
-    char    *argv[] = {"mytool", "--help", NULL};
-    Command *cmd    = NULL;
+    clp_command_t *root;
+    root                  = T_NEW(clp_command_t, clp_new_command, 0, "mytool", "a test tool", NULL, NULL);
+    char          *argv[] = {"mytool", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_usage_line_appears_in_help_stdout(void)
 {
-    ChildResult r = run_child_stdout(_usage_in_help_output);
+    child_result_t r = run_child_stdout(_usage_in_help_output);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "Usage:"));
     D_TEST_NOT_NULL(strstr(r.out, "mytool"));
@@ -3095,17 +3098,17 @@ static void test_usage_line_appears_in_help_stdout(void)
 /* usage line in --help shows "<COMMAND>" placeholder for commands with subcommands */
 static void _usage_help_with_subcommand(void)
 {
-    Command *root, *sub;
-    root = T_NEW(Command, clp_new_command, 0, "prog", "test", NULL, NULL);
-    sub  = T_NEW(Command, clp_new_command, 1, "sub", "a subcommand", NULL, NULL);
+    clp_command_t *root, *sub;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", "test", NULL, NULL);
+    sub  = T_NEW(clp_command_t, clp_new_command, 1, "sub", "a subcommand", NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, sub);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_usage_line_shows_command_placeholder(void)
 {
-    ChildResult r = run_child_stdout(_usage_help_with_subcommand);
+    child_result_t r = run_child_stdout(_usage_help_with_subcommand);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "<COMMAND>"));
 }
@@ -3113,20 +3116,20 @@ static void test_usage_line_shows_command_placeholder(void)
 /* usage line in --help shows operand names for commands with operands */
 static void _usage_help_with_operand(void)
 {
-    Command *root;
-    Operand *src, *dst;
-    root = T_NEW(Command, clp_new_command, 0, "prog", "test", NULL, NULL);
-    src = init_str_operand("source", false);
-    dst = init_str_operand("dest", false);
+    clp_command_t *root;
+    clp_operand_t *src, *dst;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", "test", NULL, NULL);
+    src  = init_str_operand("source", false);
+    dst  = init_str_operand("dest", false);
     T_ADD(clp_add_command_operand, root, src);
     T_ADD(clp_add_command_operand, root, dst);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_usage_line_shows_operand_names(void)
 {
-    ChildResult r = run_child_stdout(_usage_help_with_operand);
+    child_result_t r = run_child_stdout(_usage_help_with_operand);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "<source>"));
     D_TEST_NOT_NULL(strstr(r.out, "<dest>"));
@@ -3135,18 +3138,18 @@ static void test_usage_line_shows_operand_names(void)
 /* usage line shows "..." ellipsis for list operands */
 static void _usage_help_with_list_operand(void)
 {
-    Command *root;
-    Operand *files;
-    root = T_NEW(Command, clp_new_command, 0, "prog", "test", NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *files;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", "test", NULL, NULL);
     files = init_list_operand("files", true);
     T_ADD(clp_add_command_operand, root, files);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_usage_line_shows_ellipsis_for_list_operand(void)
 {
-    ChildResult r = run_child_stdout(_usage_help_with_list_operand);
+    child_result_t r = run_child_stdout(_usage_help_with_list_operand);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "<files ...>"));
 }
@@ -3154,20 +3157,20 @@ static void test_usage_line_shows_ellipsis_for_list_operand(void)
 /* usage line in --help includes option names */
 static void _usage_help_with_options(void)
 {
-    Command *root;
-    Option  *verbose, *output;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", "test", NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose, *output;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", "test", NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     output  = init_str_opt("output", "o", false);
     T_ADD(clp_add_command_option, root, verbose);
     T_ADD(clp_add_command_option, root, output);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_usage_line_includes_option_names(void)
 {
-    ChildResult r = run_child_stdout(_usage_help_with_options);
+    child_result_t r = run_child_stdout(_usage_help_with_options);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "--verbose"));
     D_TEST_NOT_NULL(strstr(r.out, "--output"));
@@ -3178,11 +3181,11 @@ static void test_usage_line_includes_option_names(void)
 /* registering "help" as a long option name is rejected (reserved) */
 static void _err_register_help_as_long_opt(void)
 {
-    T_NEW(Option, t_new_option_raw, "help", "H", NULL, false, OPT_ACT_SET, (Value){0}, TYPE_BOOL, false, false, NULL);
+    T_NEW(clp_option_t, t_new_option_raw, "help", "H", NULL, false, CLP_OPT_ACT_SET, (clp_value_t){0}, CLP_TYPE_BOOL, false, false, NULL);
 }
 static void test_registering_help_long_opt_exits(void)
 {
-    ChildResult r = run_child(_err_register_help_as_long_opt);
+    child_result_t r = run_child(_err_register_help_as_long_opt);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "reserved option"));
     D_TEST_NOT_NULL(strstr(r.err, "help"));
@@ -3191,15 +3194,15 @@ static void test_registering_help_long_opt_exits(void)
 /* --help exits with success and prints description */
 static void _help_long_opt_prog(void)
 {
-    Command *root;
-    root            = T_NEW(Command, clp_new_command, 0, "prog", "a test program", NULL, NULL);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    clp_command_t *root;
+    root                  = T_NEW(clp_command_t, clp_new_command, 0, "prog", "a test program", NULL, NULL);
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_long_help_exits_success_and_prints_description(void)
 {
-    ChildResult r = run_child_stdout(_help_long_opt_prog);
+    child_result_t r = run_child_stdout(_help_long_opt_prog);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "Description:"));
     D_TEST_NOT_NULL(strstr(r.out, "a test program"));
@@ -3208,15 +3211,15 @@ static void test_long_help_exits_success_and_prints_description(void)
 /* -h exits with success and prints description when no user -h is registered */
 static void _help_short_opt_prog(void)
 {
-    Command *root;
-    root            = T_NEW(Command, clp_new_command, 0, "prog", "a test program", NULL, NULL);
-    char    *argv[] = {"prog", "-h", NULL};
-    Command *cmd    = NULL;
+    clp_command_t *root;
+    root                  = T_NEW(clp_command_t, clp_new_command, 0, "prog", "a test program", NULL, NULL);
+    char          *argv[] = {"prog", "-h", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_short_help_exits_success_when_not_user_defined(void)
 {
-    ChildResult r = run_child_stdout(_help_short_opt_prog);
+    child_result_t r = run_child_stdout(_help_short_opt_prog);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "Description:"));
 }
@@ -3224,13 +3227,13 @@ static void test_short_help_exits_success_when_not_user_defined(void)
 /* -h processes as normal option when user has registered their own -h */
 static void test_short_help_not_triggered_when_user_defined_h(void)
 {
-    Command *root;
-    Option  *h;
-    root = T_NEW(Command, clp_new_command, 0, "prog", "test", NULL, NULL);
-    h    = T_NEW(Option, t_new_option, NULL, "h", NULL, TYPE_BOOL, false, false);
+    clp_command_t *root;
+    clp_option_t  *h;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", "test", NULL, NULL);
+    h    = T_NEW(clp_option_t, t_new_option, NULL, "h", NULL, CLP_TYPE_BOOL, false, false);
     T_ADD(clp_add_command_option, root, h);
-    char    *argv[] = {"prog", "-h", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-h", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
     D_TEST_EXPR(h->value_set == true);
     D_TEST_EXPR(TV(h).value_bool == true);
@@ -3240,18 +3243,18 @@ static void test_short_help_not_triggered_when_user_defined_h(void)
 /* help output includes Options: section with registered option names */
 static void _help_with_options(void)
 {
-    Command *root;
-    Option  *verbose;
-    root    = T_NEW(Command, clp_new_command, 0, "prog", "a test program", NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *verbose;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", "a test program", NULL, NULL);
     verbose = init_bool_opt("verbose", "v", false);
     T_ADD(clp_add_command_option, root, verbose);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_help_output_includes_options_section(void)
 {
-    ChildResult r = run_child_stdout(_help_with_options);
+    child_result_t r = run_child_stdout(_help_with_options);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "Options:"));
     D_TEST_NOT_NULL(strstr(r.out, "--verbose"));
@@ -3260,17 +3263,17 @@ static void test_help_output_includes_options_section(void)
 /* help output includes Commands: section with registered subcommand names */
 static void _help_with_subcommand(void)
 {
-    Command *root, *add;
-    root = T_NEW(Command, clp_new_command, 0, "prog", "a test program", NULL, NULL);
-    add  = T_NEW(Command, clp_new_command, 1, "add", "add files", NULL, NULL);
+    clp_command_t *root, *add;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", "a test program", NULL, NULL);
+    add  = T_NEW(clp_command_t, clp_new_command, 1, "add", "add files", NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, add);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_help_output_includes_commands_section(void)
 {
-    ChildResult r = run_child_stdout(_help_with_subcommand);
+    child_result_t r = run_child_stdout(_help_with_subcommand);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "Commands:"));
     D_TEST_NOT_NULL(strstr(r.out, "add"));
@@ -3279,18 +3282,18 @@ static void test_help_output_includes_commands_section(void)
 /* help output includes Arguments: section with registered operand names */
 static void _help_with_operand(void)
 {
-    Command *root;
-    Operand *file;
-    root = T_NEW(Command, clp_new_command, 0, "prog", "a test program", NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *file;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", "a test program", NULL, NULL);
     file = init_str_operand("file", false);
     T_ADD(clp_add_command_operand, root, file);
-    char    *argv[] = {"prog", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_help_output_includes_arguments_section(void)
 {
-    ChildResult r = run_child_stdout(_help_with_operand);
+    child_result_t r = run_child_stdout(_help_with_operand);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "Arguments:"));
     D_TEST_NOT_NULL(strstr(r.out, "<file>"));
@@ -3299,20 +3302,20 @@ static void test_help_output_includes_arguments_section(void)
 /* prog subcmd --help shows the subcommand's own help, not root's */
 static void _help_on_subcommand(void)
 {
-    Command *root, *push;
-    Option  *force;
-    root  = T_NEW(Command, clp_new_command, 0, "prog", "root program", NULL, NULL);
-    push  = T_NEW(Command, clp_new_command, 1, "push", "push changes", NULL, NULL);
+    clp_command_t *root, *push;
+    clp_option_t  *force;
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", "root program", NULL, NULL);
+    push  = T_NEW(clp_command_t, clp_new_command, 1, "push", "push changes", NULL, NULL);
     force = init_bool_opt("force", "f", false);
     T_ADD(clp_add_command_option, push, force);
     T_ADD(clp_add_command_sub_command, root, push);
-    char    *argv[] = {"prog", "push", "--help", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "push", "--help", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_help_on_subcommand_shows_subcommand_info(void)
 {
-    ChildResult r = run_child_stdout(_help_on_subcommand);
+    child_result_t r = run_child_stdout(_help_on_subcommand);
     D_TEST_EXPR(r.status == EXIT_SUCCESS);
     D_TEST_NOT_NULL(strstr(r.out, "push changes"));
     D_TEST_NOT_NULL(strstr(r.out, "--force"));
@@ -3322,19 +3325,19 @@ static void test_help_on_subcommand_shows_subcommand_info(void)
 
 static void test_kv_option_single_pair(void)
 {
-    Command *root;
-    Option  *env;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *env;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     env  = init_kv_opt("env", "e");
     T_ADD(clp_add_command_option, root, env);
 
-    char    *argv[] = {"prog", "--env", "HOST=localhost", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--env", "HOST=localhost", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 
     D_TEST_EXPR(env->value_set == true);
-    DStringView  key = D_STRING_VIEW_FROM_LITERAL("HOST");
-    DStringView *val = d_unordered_map_get(&TV(env).value_kv, &key);
+    d_string_view_t  key = D_STRING_VIEW_FROM_LITERAL("HOST");
+    d_string_view_t *val = d_unordered_map_get(&TV(env).value_kv, &key);
     D_TEST_NOT_NULL(val);
     D_TEST_EXPR(d_string_view_compare_against_c_string(*val, "localhost"));
     clp_cleanup(root);
@@ -3342,21 +3345,21 @@ static void test_kv_option_single_pair(void)
 
 static void test_kv_option_multiple_pairs(void)
 {
-    Command *root;
-    Option  *env;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *env;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     env  = init_kv_opt("env", "e");
     T_ADD(clp_add_command_option, root, env);
 
-    char    *argv[] = {"prog", "--env", "HOST=localhost,PORT=8080", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--env", "HOST=localhost,PORT=8080", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 
     D_TEST_EXPR(env->value_set == true);
-    DStringView  k1 = D_STRING_VIEW_FROM_LITERAL("HOST");
-    DStringView  k2 = D_STRING_VIEW_FROM_LITERAL("PORT");
-    DStringView *v1 = d_unordered_map_get(&TV(env).value_kv, &k1);
-    DStringView *v2 = d_unordered_map_get(&TV(env).value_kv, &k2);
+    d_string_view_t  k1 = D_STRING_VIEW_FROM_LITERAL("HOST");
+    d_string_view_t  k2 = D_STRING_VIEW_FROM_LITERAL("PORT");
+    d_string_view_t *v1 = d_unordered_map_get(&TV(env).value_kv, &k1);
+    d_string_view_t *v2 = d_unordered_map_get(&TV(env).value_kv, &k2);
     D_TEST_NOT_NULL(v1);
     D_TEST_NOT_NULL(v2);
     D_TEST_EXPR(d_string_view_compare_against_c_string(*v1, "localhost"));
@@ -3366,19 +3369,19 @@ static void test_kv_option_multiple_pairs(void)
 
 static void test_kv_operand_single_pair(void)
 {
-    Command *root;
-    Operand *binding;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *binding;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     binding = init_kv_operand("binding", true);
     T_ADD(clp_add_command_operand, root, binding);
 
-    char    *argv[] = {"prog", "HOST=localhost", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "HOST=localhost", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 
     D_TEST_EXPR(binding->value_set == true);
-    DStringView  key = D_STRING_VIEW_FROM_LITERAL("HOST");
-    DStringView *val = d_unordered_map_get(&TV(binding).value_kv, &key);
+    d_string_view_t  key = D_STRING_VIEW_FROM_LITERAL("HOST");
+    d_string_view_t *val = d_unordered_map_get(&TV(binding).value_kv, &key);
     D_TEST_NOT_NULL(val);
     D_TEST_EXPR(d_string_view_compare_against_c_string(*val, "localhost"));
     clp_cleanup(root);
@@ -3386,18 +3389,18 @@ static void test_kv_operand_single_pair(void)
 
 static void _err_kv_opt_missing_eq(void)
 {
-    Command *root;
-    Option  *env;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *env;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     env  = init_kv_opt("env", "e");
     T_ADD(clp_add_command_option, root, env);
-    char    *argv[] = {"prog", "--env", "HOSTlocalhost", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--env", "HOSTlocalhost", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_kv_opt_missing_eq_exits(void)
 {
-    ChildResult r = run_child(_err_kv_opt_missing_eq);
+    child_result_t r = run_child(_err_kv_opt_missing_eq);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "missing '='"));
     D_TEST_NOT_NULL(strstr(r.err, "HOSTlocalhost"));
@@ -3406,18 +3409,18 @@ static void test_kv_opt_missing_eq_exits(void)
 
 static void _err_kv_opt_empty_key(void)
 {
-    Command *root;
-    Option  *env;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *env;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     env  = init_kv_opt("env", "e");
     T_ADD(clp_add_command_option, root, env);
-    char    *argv[] = {"prog", "--env", "=localhost", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--env", "=localhost", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_kv_opt_empty_key_exits(void)
 {
-    ChildResult r = run_child(_err_kv_opt_empty_key);
+    child_result_t r = run_child(_err_kv_opt_empty_key);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "empty key"));
     D_TEST_NOT_NULL(strstr(r.err, "--env"));
@@ -3425,18 +3428,18 @@ static void test_kv_opt_empty_key_exits(void)
 
 static void _err_kv_opt_empty_value(void)
 {
-    Command *root;
-    Option  *env;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_option_t  *env;
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     env  = init_kv_opt("env", "e");
     T_ADD(clp_add_command_option, root, env);
-    char    *argv[] = {"prog", "--env", "HOST=", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "--env", "HOST=", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_kv_opt_empty_value_exits(void)
 {
-    ChildResult r = run_child(_err_kv_opt_empty_value);
+    child_result_t r = run_child(_err_kv_opt_empty_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "empty value"));
     D_TEST_NOT_NULL(strstr(r.err, "HOST"));
@@ -3445,18 +3448,18 @@ static void test_kv_opt_empty_value_exits(void)
 
 static void _err_kv_operand_missing_eq(void)
 {
-    Command *root;
-    Operand *binding;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *binding;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     binding = init_kv_operand("binding", true);
     T_ADD(clp_add_command_operand, root, binding);
-    char    *argv[] = {"prog", "HOSTlocalhost", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "HOSTlocalhost", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_kv_operand_missing_eq_exits(void)
 {
-    ChildResult r = run_child(_err_kv_operand_missing_eq);
+    child_result_t r = run_child(_err_kv_operand_missing_eq);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "missing '='"));
     D_TEST_NOT_NULL(strstr(r.err, "HOSTlocalhost"));
@@ -3464,36 +3467,36 @@ static void test_kv_operand_missing_eq_exits(void)
 
 static void _err_kv_operand_empty_key(void)
 {
-    Command *root;
-    Operand *binding;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *binding;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     binding = init_kv_operand("binding", true);
     T_ADD(clp_add_command_operand, root, binding);
-    char    *argv[] = {"prog", "=localhost", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "=localhost", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_kv_operand_empty_key_exits(void)
 {
-    ChildResult r = run_child(_err_kv_operand_empty_key);
+    child_result_t r = run_child(_err_kv_operand_empty_key);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "empty key"));
 }
 
 static void _err_kv_operand_empty_value(void)
 {
-    Command *root;
-    Operand *binding;
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *root;
+    clp_operand_t *binding;
+    root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     binding = init_kv_operand("binding", true);
     T_ADD(clp_add_command_operand, root, binding);
-    char    *argv[] = {"prog", "HOST=", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "HOST=", NULL};
+    clp_command_t *cmd    = NULL;
     clp_parse_args(root, argv, &cmd);
 }
 static void test_kv_operand_empty_value_exits(void)
 {
-    ChildResult r = run_child(_err_kv_operand_empty_value);
+    child_result_t r = run_child(_err_kv_operand_empty_value);
     D_TEST_EXPR(r.status == EXIT_FAILURE);
     D_TEST_NOT_NULL(strstr(r.err, "empty value"));
     D_TEST_NOT_NULL(strstr(r.err, "HOST"));
@@ -3506,29 +3509,29 @@ static void test_kv_operand_empty_value_exits(void)
 /* every entry is created, registered in order and bound to its dest */
 static void test_insert_opts_creates_and_registers(void)
 {
-    ClpError e;
-    bool     verbose = false;
-    long     jobs    = 4;
-    usize    port    = 8080;
-    Command *root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t    e;
+    bool           verbose = false;
+    long           jobs    = 4;
+    usize          port    = 8080;
+    clp_command_t *root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
 
-    ClpOptionInfo opts[] = {
-        {"verbose", "v", "verbose output", &verbose, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
-        {"jobs", "j", "worker count", &jobs, OPT_ACT_SET, TYPE_LONG, false, true, NULL, NULL},
-        {"port", NULL, NULL, &port, OPT_ACT_SET, TYPE_USIZE, false, false, check_port_range, NULL},
+    clp_option_info_t opts[] = {
+        {"verbose", "v", "verbose output", &verbose, CLP_OPT_ACT_SET, CLP_TYPE_BOOL, false, false, NULL, NULL},
+        {"jobs", "j", "worker count", &jobs, CLP_OPT_ACT_SET, CLP_TYPE_LONG, false, true, NULL, NULL},
+        {"port", NULL, NULL, &port, CLP_OPT_ACT_SET, CLP_TYPE_USIZE, false, false, check_port_range, NULL},
     };
     D_TEST_EXPR(clp_insert_opts(root, opts, sizeof(opts) / sizeof(*opts), &e) == CLP_OK);
     D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 3);
 
-    Option *o_jobs = clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("jobs"));
+    clp_option_t *o_jobs = clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("jobs"));
     D_TEST_NOT_NULL(o_jobs);
     D_TEST_EXPR(o_jobs->dest == &jobs && o_jobs->global == true && o_jobs->short_name == 'j');
-    Option *o_port = clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("port"));
+    clp_option_t *o_port = clp_get_option_by_long(root, D_STRING_VIEW_FROM_LITERAL("port"));
     D_TEST_NOT_NULL(o_port);
     D_TEST_EXPR(o_port->checker == check_port_range);
 
-    char    *argv[] = {"prog", "-v", "--jobs", "12", "--port", "443", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "--jobs", "12", "--port", "443", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(verbose == true && jobs == 12 && port == 443);
     clp_cleanup(root);
@@ -3537,8 +3540,8 @@ static void test_insert_opts_creates_and_registers(void)
 /* count 0 is a no-op, infos may then be NULL */
 static void test_insert_opts_empty(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     D_TEST_EXPR(clp_insert_opts(root, NULL, 0, &e) == CLP_OK);
     D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 0);
     clp_cleanup(root);
@@ -3547,14 +3550,14 @@ static void test_insert_opts_empty(void)
 /* a duplicate stops the insertion: err is filled, earlier entries stay */
 static void test_insert_opts_stops_on_duplicate(void)
 {
-    ClpError e;
-    bool     a = false, b = false, c = false;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t    e;
+    bool           a = false, b = false, c = false;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
 
-    ClpOptionInfo opts[] = {
-        {"alpha", "a", NULL, &a, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
-        {"beta", "a", NULL, &b, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
-        {"gamma", "g", NULL, &c, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
+    clp_option_info_t opts[] = {
+        {"alpha", "a", NULL, &a, CLP_OPT_ACT_SET, CLP_TYPE_BOOL, false, false, NULL, NULL},
+        {"beta", "a", NULL, &b, CLP_OPT_ACT_SET, CLP_TYPE_BOOL, false, false, NULL, NULL},
+        {"gamma", "g", NULL, &c, CLP_OPT_ACT_SET, CLP_TYPE_BOOL, false, false, NULL, NULL},
     };
     D_TEST_EXPR(clp_insert_opts(root, opts, sizeof(opts) / sizeof(*opts), &e) == CLP_ERR_DUPLICATE);
     D_TEST_EXPR(e.code == CLP_ERR_DUPLICATE);
@@ -3568,21 +3571,21 @@ static void test_insert_opts_stops_on_duplicate(void)
 /* an entry clp_new_option_raw rejects stops the insertion with its status */
 static void test_insert_opts_stops_on_invalid_entry(void)
 {
-    ClpError e;
-    long     n = 0;
-    usize    v = 0;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t    e;
+    long           n    = 0;
+    usize          v    = 0;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
 
-    ClpOptionInfo bad_name[] = {
-        {"num", "n", NULL, &n, OPT_ACT_SET, TYPE_LONG, false, false, NULL, NULL},
-        {"bad name", NULL, NULL, &n, OPT_ACT_SET, TYPE_LONG, false, false, NULL, NULL},
+    clp_option_info_t bad_name[] = {
+        {"num", "n", NULL, &n, CLP_OPT_ACT_SET, CLP_TYPE_LONG, false, false, NULL, NULL},
+        {"bad name", NULL, NULL, &n, CLP_OPT_ACT_SET, CLP_TYPE_LONG, false, false, NULL, NULL},
     };
     D_TEST_EXPR(clp_insert_opts(root, bad_name, 2, &e) == CLP_ERR_INVALID_NAME);
     D_TEST_EXPR(e.code == CLP_ERR_INVALID_NAME);
     D_TEST_EXPR(d_dyn_array_get_size(&root->options) == 1);
 
-    ClpOptionInfo bad_type[] = {
-        {"verbose", "v", NULL, &v, OPT_ACT_COUNT, TYPE_LONG, false, false, NULL, NULL},
+    clp_option_info_t bad_type[] = {
+        {"verbose", "v", NULL, &v, CLP_OPT_ACT_COUNT, CLP_TYPE_LONG, false, false, NULL, NULL},
     };
     D_TEST_EXPR(clp_insert_opts(root, bad_type, 1, &e) == CLP_ERR_INVALID_TYPE);
     D_TEST_EXPR(e.code == CLP_ERR_INVALID_TYPE);
@@ -3595,23 +3598,23 @@ static void test_insert_opts_stops_on_invalid_entry(void)
 /* values land in the caller's variables; absent options keep their defaults */
 static void test_dest_macros_bind_and_keep_defaults(void)
 {
-    bool        verbose = false;
-    long        jobs    = 4;
-    usize       port    = 8080;
-    double      ratio   = 0.5;
-    char        sep     = ',';
-    DStringView name    = D_STRING_VIEW_FROM_LITERAL("anon");
-    Option     *o_verbose, *o_jobs, *o_port, *o_ratio, *o_sep, *o_name;
-    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    bool            verbose = false;
+    long            jobs    = 4;
+    usize           port    = 8080;
+    double          ratio   = 0.5;
+    char            sep     = ',';
+    d_string_view_t name    = D_STRING_VIEW_FROM_LITERAL("anon");
+    clp_option_t   *o_verbose, *o_jobs, *o_port, *o_ratio, *o_sep, *o_name;
+    clp_command_t  *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
 
-    o_verbose = T_NEW(Option, clp_new_option, "verbose", "v", NULL, &verbose, false, false);
-    o_jobs    = T_NEW(Option, clp_new_option, "jobs", "j", NULL, &jobs, false, false);
-    o_port    = T_NEW(Option, clp_new_option, "port", "p", NULL, &port, false, false);
-    o_ratio   = T_NEW(Option, clp_new_option, "ratio", "r", NULL, &ratio, false, false);
-    o_sep     = T_NEW(Option, clp_new_option, "sep", "s", NULL, &sep, false, false);
-    o_name    = T_NEW(Option, clp_new_option, "name", "n", NULL, &name, false, false);
-    D_TEST_EXPR(o_verbose->type == TYPE_BOOL && o_jobs->type == TYPE_LONG && o_port->type == TYPE_USIZE);
-    D_TEST_EXPR(o_ratio->type == TYPE_DOUBLE && o_sep->type == TYPE_CHAR && o_name->type == TYPE_STR);
+    o_verbose = T_NEW(clp_option_t, clp_new_option, "verbose", "v", NULL, &verbose, false, false);
+    o_jobs    = T_NEW(clp_option_t, clp_new_option, "jobs", "j", NULL, &jobs, false, false);
+    o_port    = T_NEW(clp_option_t, clp_new_option, "port", "p", NULL, &port, false, false);
+    o_ratio   = T_NEW(clp_option_t, clp_new_option, "ratio", "r", NULL, &ratio, false, false);
+    o_sep     = T_NEW(clp_option_t, clp_new_option, "sep", "s", NULL, &sep, false, false);
+    o_name    = T_NEW(clp_option_t, clp_new_option, "name", "n", NULL, &name, false, false);
+    D_TEST_EXPR(o_verbose->type == CLP_TYPE_BOOL && o_jobs->type == CLP_TYPE_LONG && o_port->type == CLP_TYPE_USIZE);
+    D_TEST_EXPR(o_ratio->type == CLP_TYPE_DOUBLE && o_sep->type == CLP_TYPE_CHAR && o_name->type == CLP_TYPE_STR);
     T_ADD(clp_add_command_option, root, o_verbose);
     T_ADD(clp_add_command_option, root, o_jobs);
     T_ADD(clp_add_command_option, root, o_port);
@@ -3619,8 +3622,8 @@ static void test_dest_macros_bind_and_keep_defaults(void)
     T_ADD(clp_add_command_option, root, o_sep);
     T_ADD(clp_add_command_option, root, o_name);
 
-    char    *argv[] = {"prog", "-v", "--jobs", "12", "-r", "2.5", "--name=bob", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-v", "--jobs", "12", "-r", "2.5", "--name=bob", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, NULL) == CLP_OK);
     D_TEST_EXPR(verbose == true && o_verbose->value_set);
     D_TEST_EXPR(jobs == 12 && o_jobs->value_set);
@@ -3634,15 +3637,15 @@ static void test_dest_macros_bind_and_keep_defaults(void)
 /* a value that fails conversion or the checker never overwrites dest */
 static void test_dest_untouched_on_rejected_value(void)
 {
-    long     num = 7;
-    usize    op  = 42;
-    Option  *o_num;
-    Operand *o_op;
-    ClpError e;
-    Command *cmd;
+    long           num = 7;
+    usize          op  = 42;
+    clp_option_t  *o_num;
+    clp_operand_t *o_op;
+    clp_error_t    e;
+    clp_command_t *cmd;
 
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    o_num         = T_NEW(Option, clp_new_option, "num", "n", NULL, &num, false, false);
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    o_num               = T_NEW(clp_option_t, clp_new_option, "num", "n", NULL, &num, false, false);
     T_ADD(clp_add_command_option, root, o_num);
     char *partial[] = {"prog", "-n", "12x", NULL}; /* strtol would have parsed 12 */
     cmd             = NULL;
@@ -3650,8 +3653,8 @@ static void test_dest_untouched_on_rejected_value(void)
     D_TEST_EXPR(num == 7 && o_num->value_set == false);
     clp_cleanup(root);
 
-    root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    o_num = T_NEW(Option, clp_new_option_checked, "num", "n", NULL, &num, false, false, check_positive_long);
+    root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    o_num = T_NEW(clp_option_t, clp_new_option_checked, "num", "n", NULL, &num, false, false, check_positive_long);
     T_ADD(clp_add_command_option, root, o_num);
     char *negative[] = {"prog", "-n", "-3", NULL};
     cmd              = NULL;
@@ -3659,8 +3662,8 @@ static void test_dest_untouched_on_rejected_value(void)
     D_TEST_EXPR(num == 7);
     clp_cleanup(root);
 
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    o_op = T_NEW(Operand, clp_new_operand_checked, "port", NULL, &op, true, check_port_range);
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    o_op = T_NEW(clp_operand_t, clp_new_operand_checked, "port", NULL, &op, true, check_port_range);
     T_ADD(clp_add_command_operand, root, o_op);
     char *too_big[] = {"prog", "70000", NULL};
     cmd             = NULL;
@@ -3672,27 +3675,27 @@ static void test_dest_untouched_on_rejected_value(void)
 /* count, list and kv write into caller-owned counters and collections */
 static void test_dest_count_list_kv(void)
 {
-    usize         level = 1; /* counting starts from the caller's value */
-    DDynArray     tags;
-    DDynArray     files;
-    DUnorderedMap env;
-    D_TEST_EXPR(d_dyn_array_init(&tags, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) == D_OK);
-    D_TEST_EXPR(d_dyn_array_init(&files, sizeof(DStringView), 1, NULL, NULL, RAW_BUF_OPT_NONE) == D_OK);
-    D_TEST_EXPR(d_unordered_map_init_not_owned_d_string_view_key(&env, sizeof(DStringView), 1, NULL) == 0);
+    usize             level = 1; /* counting starts from the caller's value */
+    d_dyn_array_t     tags;
+    d_dyn_array_t     files;
+    d_unordered_map_t env;
+    D_TEST_EXPR(d_dyn_array_init(&tags, sizeof(d_string_view_t), 1, NULL, NULL, RAW_BUF_OPT_NONE) == D_OK);
+    D_TEST_EXPR(d_dyn_array_init(&files, sizeof(d_string_view_t), 1, NULL, NULL, RAW_BUF_OPT_NONE) == D_OK);
+    D_TEST_EXPR(d_unordered_map_init_not_owned_d_string_view_key(&env, sizeof(d_string_view_t), 1, NULL) == 0);
 
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_count, "level", "l", NULL, &level, false));
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_list, "tag", "t", NULL, &tags, false, false));
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_kv, "env", "e", NULL, &env, false, false));
-    T_ADD(clp_add_command_operand, root, T_NEW(Operand, clp_new_operand_list, "files", NULL, &files, true));
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_count, "level", "l", NULL, &level, false));
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_list, "tag", "t", NULL, &tags, false, false));
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_kv, "env", "e", NULL, &env, false, false));
+    T_ADD(clp_add_command_operand, root, T_NEW(clp_operand_t, clp_new_operand_list, "files", NULL, &files, true));
 
-    char    *argv[] = {"prog", "-ll", "-t", "a,b", "--env", "K=v", "x", "y", "-l", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "-ll", "-t", "a,b", "--env", "K=v", "x", "y", "-l", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, NULL) == CLP_OK);
     D_TEST_EXPR(level == 4);
     D_TEST_EXPR(d_dyn_array_get_size(&tags) == 2);
     D_TEST_EXPR(d_dyn_array_get_size(&files) == 2);
-    DStringView key = D_STRING_VIEW_FROM_LITERAL("K");
+    d_string_view_t key = D_STRING_VIEW_FROM_LITERAL("K");
     D_TEST_NOT_NULL(d_unordered_map_get(&env, &key));
     clp_cleanup(root);
 
@@ -3703,22 +3706,22 @@ static void test_dest_count_list_kv(void)
     d_unordered_map_destroy(&env);
 }
 
-/* ── transform (TYPE_CUSTOM, dest is the ctx) ───────────────────────────────────── */
+/* ── transform (CLP_TYPE_CUSTOM, dest is the ctx) ───────────────────────────────────── */
 
 typedef enum
 {
     TS_NONE,
     TS_ONLY,
     TS_ADDR
-} TsType;
+} ts_type_t;
 
-static TsType      ts_seen;
+static ts_type_t   ts_seen;
 static int         transform_calls;
 static const char *last_transform_arg;
 
 static const char *parse_ts(void *ctx, const char *arg)
 {
-    TsType *out = ctx;
+    ts_type_t *out = ctx;
     transform_calls++;
     last_transform_arg = arg;
     if (strcmp(arg, "tsonly") == 0)
@@ -3739,16 +3742,16 @@ static void test_option_transform_receives_raw_arg(void)
         {"prog", "-ttsonly", NULL, NULL},
         {"prog", "-t", "tsaddr", NULL},
     };
-    TsType expected[] = {TS_ONLY, TS_ADDR, TS_ONLY, TS_ADDR};
+    ts_type_t expected[] = {TS_ONLY, TS_ADDR, TS_ONLY, TS_ADDR};
     for (usize i = 0; i < 4; i++)
     {
-        Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-        Option  *ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", "t", NULL, parse_ts, &ts_seen, false, false);
-        D_TEST_EXPR(ts->type == TYPE_CUSTOM && ts->has_args && ts->dest == &ts_seen && ts->checker == NULL);
+        clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+        clp_option_t  *ts   = T_NEW(clp_option_t, clp_new_option_transform, "ip-timestamp", "t", NULL, parse_ts, &ts_seen, false, false);
+        D_TEST_EXPR(ts->type == CLP_TYPE_CUSTOM && ts->has_args && ts->dest == &ts_seen && ts->checker == NULL);
         T_ADD(clp_add_command_option, root, ts);
-        Command *cmd    = NULL;
-        ts_seen         = TS_NONE;
-        transform_calls = 0;
+        clp_command_t *cmd = NULL;
+        ts_seen            = TS_NONE;
+        transform_calls    = 0;
         D_TEST_EXPR(clp_try_parse_args(root, forms[i], &cmd, NULL) == CLP_OK);
         D_TEST_EXPR(transform_calls == 1 && ts_seen == expected[i] && ts->value_set);
         clp_cleanup(root);
@@ -3758,20 +3761,20 @@ static void test_option_transform_receives_raw_arg(void)
 /* a rejected transform fails the parse with its message; absent → never called */
 static void test_option_transform_rejects_and_absent(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Option  *ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_option_t  *ts   = T_NEW(clp_option_t, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false);
     T_ADD(clp_add_command_option, root, ts);
-    char    *bad[] = {"prog", "--ip-timestamp", "tsfoo", NULL};
-    Command *cmd   = NULL;
+    char          *bad[] = {"prog", "--ip-timestamp", "tsfoo", NULL};
+    clp_command_t *cmd   = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, bad, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_NOT_NULL(strstr(e.message, "'tsfoo'"));
     D_TEST_NOT_NULL(strstr(e.message, "expected \"tsonly\" or \"tsaddr\""));
     D_TEST_EXPR(ts->value_set == false);
     clp_cleanup(root);
 
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    ts   = T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false);
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    ts   = T_NEW(clp_option_t, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false);
     T_ADD(clp_add_command_option, root, ts);
     char *absent[]  = {"prog", NULL};
     char *missing[] = {"prog", "--ip-timestamp", NULL};
@@ -3787,11 +3790,11 @@ static void test_option_transform_rejects_and_absent(void)
 /* required transform option is enforced through value_set */
 static void test_option_transform_required(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, true, false));
-    char    *argv[] = {"prog", NULL};
-    Command *cmd    = NULL;
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, true, false));
+    char          *argv[] = {"prog", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_MISSING_REQUIRED);
     clp_cleanup(root);
 }
@@ -3799,20 +3802,20 @@ static void test_option_transform_required(void)
 /* operand transform: called with the positional argument */
 static void test_operand_transform(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Operand *mode = T_NEW(Operand, clp_new_operand_transform, "mode", NULL, parse_ts, &ts_seen, true);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_operand_t *mode = T_NEW(clp_operand_t, clp_new_operand_transform, "mode", NULL, parse_ts, &ts_seen, true);
     T_ADD(clp_add_command_operand, root, mode);
-    char    *ok[] = {"prog", "tsaddr", NULL};
-    Command *cmd  = NULL;
-    ts_seen       = TS_NONE;
+    char          *ok[] = {"prog", "tsaddr", NULL};
+    clp_command_t *cmd  = NULL;
+    ts_seen             = TS_NONE;
     D_TEST_EXPR(clp_try_parse_args(root, ok, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(ts_seen == TS_ADDR && mode->value_set);
     D_TEST_EXPR(strcmp(last_transform_arg, "tsaddr") == 0);
     clp_cleanup(root);
 
-    root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    mode = T_NEW(Operand, clp_new_operand_transform, "mode", NULL, parse_ts, &ts_seen, true);
+    root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    mode = T_NEW(clp_operand_t, clp_new_operand_transform, "mode", NULL, parse_ts, &ts_seen, true);
     T_ADD(clp_add_command_operand, root, mode);
     char *bad[] = {"prog", "nope", NULL};
     cmd         = NULL;
@@ -3822,20 +3825,20 @@ static void test_operand_transform(void)
     clp_cleanup(root);
 }
 
-/* transform <=> TYPE_CUSTOM, SET only, no checker: everything else is refused */
+/* transform <=> CLP_TYPE_CUSTOM, SET only, no checker: everything else is refused */
 static void test_transform_invalid_combinations(void)
 {
-    Option  *o;
-    Operand *op;
-    ClpError e;
-    long     n;
-    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, &n, OPT_ACT_SET, TYPE_LONG, false, false, NULL, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
+    clp_option_t  *o;
+    clp_operand_t *op;
+    clp_error_t    e;
+    long           n;
+    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, &n, CLP_OPT_ACT_SET, CLP_TYPE_LONG, false, false, NULL, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
     D_TEST_NULL(o);
-    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, NULL, OPT_ACT_SET, TYPE_CUSTOM, false, false, NULL, NULL, &e) == CLP_ERR_INVALID_TYPE);
-    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, NULL, OPT_ACT_LIST, TYPE_CUSTOM, false, false, NULL, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
-    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, NULL, OPT_ACT_SET, TYPE_CUSTOM, false, false, check_no_dot_str, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, NULL, CLP_OPT_ACT_SET, CLP_TYPE_CUSTOM, false, false, NULL, NULL, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, NULL, CLP_OPT_ACT_LIST, CLP_TYPE_CUSTOM, false, false, NULL, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(clp_new_option_raw(&o, "x", NULL, NULL, NULL, CLP_OPT_ACT_SET, CLP_TYPE_CUSTOM, false, false, check_no_dot_str, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
     D_TEST_NOT_NULL(strstr(e.message, "checker"));
-    D_TEST_EXPR(clp_new_operand_raw(&op, "x", NULL, NULL, OPERAND_ACT_KV, TYPE_CUSTOM, false, NULL, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
+    D_TEST_EXPR(clp_new_operand_raw(&op, "x", NULL, NULL, CLP_OPERAND_ACT_KV, CLP_TYPE_CUSTOM, false, NULL, parse_ts, &e) == CLP_ERR_INVALID_TYPE);
     D_TEST_NULL(op);
 }
 
@@ -3849,10 +3852,10 @@ static void test_transform_help_shows_value(void)
     {
         close(pipefd[0]);
         dup2(pipefd[1], STDOUT_FILENO);
-        Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-        T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false));
-        char    *argv[] = {"prog", "--help", NULL};
-        Command *cmd    = NULL;
+        clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+        T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_transform, "ip-timestamp", NULL, NULL, parse_ts, &ts_seen, false, false));
+        char          *argv[] = {"prog", "--help", NULL};
+        clp_command_t *cmd    = NULL;
         clp_parse_args(root, argv, &cmd);
         _exit(1);
     }
@@ -3878,12 +3881,12 @@ static void test_bool_flag_with_and_without_following_token(void)
     };
     for (usize i = 0; i < 4; i++)
     {
-        bool        verbose = false;
-        DStringView file    = {0};
-        Command    *root    = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-        T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option, "verbose", "v", NULL, &verbose, false, false));
-        T_ADD(clp_add_command_operand, root, T_NEW(Operand, clp_new_operand, "file", NULL, &file, false));
-        Command *cmd = NULL;
+        bool            verbose = false;
+        d_string_view_t file    = {0};
+        clp_command_t  *root    = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+        T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option, "verbose", "v", NULL, &verbose, false, false));
+        T_ADD(clp_add_command_operand, root, T_NEW(clp_operand_t, clp_new_operand, "file", NULL, &file, false));
+        clp_command_t *cmd = NULL;
         D_TEST_EXPR(clp_try_parse_args(root, forms[i], &cmd, NULL) == CLP_OK);
         D_TEST_EXPR(verbose == true);
         D_TEST_EXPR(forms[i][2] == NULL || d_string_view_compare_against_c_string(file, "file"));
@@ -3894,12 +3897,12 @@ static void test_bool_flag_with_and_without_following_token(void)
 /* regression: a conversion failure is reported, not silently accepted */
 static void test_conversion_failure_is_reported(void)
 {
-    long     ttl = 64;
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option, "ttl", NULL, NULL, &ttl, false, false));
-    char    *argv[] = {"prog", "--ttl", "abc", NULL};
-    Command *cmd    = NULL;
+    long           ttl = 64;
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option, "ttl", NULL, NULL, &ttl, false, false));
+    char          *argv[] = {"prog", "--ttl", "abc", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_BAD_VALUE);
     D_TEST_NOT_NULL(strstr(e.message, "'abc'"));
     D_TEST_EXPR(ttl == 64);
@@ -3909,13 +3912,13 @@ static void test_conversion_failure_is_reported(void)
 /* one transform shared by two options: each result goes to its own ctx */
 static void test_transform_ctx_shared_by_two_options(void)
 {
-    ClpError e;
-    TsType   in = TS_NONE, out = TS_NONE;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "in", NULL, NULL, parse_ts, &in, false, false));
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_transform, "out", NULL, NULL, parse_ts, &out, false, false));
-    char    *argv[] = {"prog", "--in", "tsonly", "--out=tsaddr", NULL};
-    Command *cmd    = NULL;
+    clp_error_t    e;
+    ts_type_t      in = TS_NONE, out = TS_NONE;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_transform, "in", NULL, NULL, parse_ts, &in, false, false));
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_transform, "out", NULL, NULL, parse_ts, &out, false, false));
+    char          *argv[] = {"prog", "--in", "tsonly", "--out=tsaddr", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(in == TS_ONLY && out == TS_ADDR);
     clp_cleanup(root);
@@ -3932,11 +3935,11 @@ static const char *record_ctx(void *ctx, const char *arg)
 
 static void test_transform_null_ctx(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    T_ADD(clp_add_command_operand, root, T_NEW(Operand, clp_new_operand_transform, "x", NULL, record_ctx, NULL, true));
-    char    *argv[] = {"prog", "v", NULL};
-    Command *cmd    = NULL;
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    T_ADD(clp_add_command_operand, root, T_NEW(clp_operand_t, clp_new_operand_transform, "x", NULL, record_ctx, NULL, true));
+    char          *argv[] = {"prog", "v", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_NULL(seen_ctx);
     clp_cleanup(root);
@@ -3946,22 +3949,22 @@ static void test_transform_null_ctx(void)
 
 static void test_list_and_kv_init_helpers(void)
 {
-    ClpError      e;
-    DDynArray     tags;
-    DUnorderedMap env;
+    clp_error_t       e;
+    d_dyn_array_t     tags;
+    d_unordered_map_t env;
     D_TEST_EXPR(clp_list_init(&tags, &e) == CLP_OK);
     D_TEST_EXPR(clp_kv_init(&env, &e) == CLP_OK);
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_list, "tag", "t", NULL, &tags, false, false));
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option_kv, "env", "e", NULL, &env, false, false));
-    char    *argv[] = {"prog", "-t", "a,b", "--tag=c", "-e", "K=V,X=Y", NULL};
-    Command *cmd    = NULL;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_list, "tag", "t", NULL, &tags, false, false));
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option_kv, "env", "e", NULL, &env, false, false));
+    char          *argv[] = {"prog", "-t", "a,b", "--tag=c", "-e", "K=V,X=Y", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(d_dyn_array_get_size(&tags) == 3);
-    DStringView first = {0};
+    d_string_view_t first = {0};
     D_TEST_EXPR(d_dyn_array_get_elem_at(&tags, 0, &first) == D_OK && d_string_view_compare_against_c_string(first, "a"));
-    DStringView  key   = D_STRING_VIEW_FROM_LITERAL("X");
-    DStringView *value = d_unordered_map_get(&env, &key);
+    d_string_view_t  key   = D_STRING_VIEW_FROM_LITERAL("X");
+    d_string_view_t *value = d_unordered_map_get(&env, &key);
     D_TEST_EXPR(value != NULL && d_string_view_compare_against_c_string(*value, "Y"));
     clp_cleanup(root);
     clp_list_destroy(&tags);
@@ -3970,12 +3973,12 @@ static void test_list_and_kv_init_helpers(void)
 
 /* ── global options looked up in ancestors ──────────────────────────────── */
 
-static Command *build_global_tree(Command **sub_out, Option **verbose_out, Option **token_out, bool *verbose, DStringView *token, bool token_required)
+static clp_command_t *build_global_tree(clp_command_t **sub_out, clp_option_t **verbose_out, clp_option_t **token_out, bool *verbose, d_string_view_t *token, bool token_required)
 {
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Command *sub  = T_NEW(Command, clp_new_command, 1, "sub", NULL, NULL, NULL);
-    Option  *v    = T_NEW(Option, clp_new_option, "verbose", "v", NULL, verbose, false, true);
-    Option  *t    = T_NEW(Option, clp_new_option, "token", "T", NULL, token, token_required, true);
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *sub  = T_NEW(clp_command_t, clp_new_command, 1, "sub", NULL, NULL, NULL);
+    clp_option_t  *v    = T_NEW(clp_option_t, clp_new_option, "verbose", "v", NULL, verbose, false, true);
+    clp_option_t  *t    = T_NEW(clp_option_t, clp_new_option, "token", "T", NULL, token, token_required, true);
     T_ADD(clp_add_command_option, root, v);
     T_ADD(clp_add_command_option, root, t);
     T_ADD(clp_add_command_sub_command, root, sub);
@@ -3995,13 +3998,13 @@ static void test_global_option_after_subcommand_name(void)
     };
     for (usize i = 0; i < 3; i++)
     {
-        ClpError    e;
-        bool        verbose = false;
-        DStringView token   = {0};
-        Command    *sub;
-        Option     *v, *t;
-        Command    *root = build_global_tree(&sub, &v, &t, &verbose, &token, false);
-        Command    *cmd  = NULL;
+        clp_error_t     e;
+        bool            verbose = false;
+        d_string_view_t token   = {0};
+        clp_command_t  *sub;
+        clp_option_t   *v, *t;
+        clp_command_t  *root = build_global_tree(&sub, &v, &t, &verbose, &token, false);
+        clp_command_t  *cmd  = NULL;
         D_TEST_EXPR(clp_try_parse_args(root, forms[i], &cmd, &e) == CLP_OK);
         D_TEST_EXPR(cmd == sub && verbose == true && v->value_set);
         clp_cleanup(root);
@@ -4012,14 +4015,14 @@ static void test_global_option_after_subcommand_name(void)
  * each option once (this used to double free; run under valgrind) */
 static void test_global_option_not_copied_into_child(void)
 {
-    ClpError    e;
-    bool        verbose = false;
-    DStringView token   = {0};
-    Command    *sub;
-    Option     *v, *t;
-    Command    *root   = build_global_tree(&sub, &v, &t, &verbose, &token, false);
-    char       *argv[] = {"prog", "sub", "--", NULL};
-    Command    *cmd    = NULL;
+    clp_error_t     e;
+    bool            verbose = false;
+    d_string_view_t token   = {0};
+    clp_command_t  *sub;
+    clp_option_t   *v, *t;
+    clp_command_t  *root   = build_global_tree(&sub, &v, &t, &verbose, &token, false);
+    char           *argv[] = {"prog", "sub", "--", NULL};
+    clp_command_t  *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(d_dyn_array_get_size(&sub->options) == 0);
     D_TEST_EXPR(clp_get_option_by_long(sub, D_STRING_VIEW_FROM_LITERAL("verbose")) == NULL);
@@ -4029,14 +4032,14 @@ static void test_global_option_not_copied_into_child(void)
 /* a required global is enforced on the subcommand even when it gets no args */
 static void test_required_global_checked_when_child_has_no_args(void)
 {
-    ClpError    e;
-    bool        verbose = false;
-    DStringView token   = {0};
-    Command    *sub;
-    Option     *v, *t;
-    Command    *root   = build_global_tree(&sub, &v, &t, &verbose, &token, true);
-    char       *argv[] = {"prog", "sub", NULL};
-    Command    *cmd    = NULL;
+    clp_error_t     e;
+    bool            verbose = false;
+    d_string_view_t token   = {0};
+    clp_command_t  *sub;
+    clp_option_t   *v, *t;
+    clp_command_t  *root   = build_global_tree(&sub, &v, &t, &verbose, &token, true);
+    char           *argv[] = {"prog", "sub", NULL};
+    clp_command_t  *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_MISSING_REQUIRED);
     D_TEST_NOT_NULL(strstr(e.message, "--token"));
     D_TEST_EXPR(e.command == sub);
@@ -4049,15 +4052,15 @@ static void test_required_global_checked_when_child_has_no_args(void)
 /* a subcommand's own option shadows an ancestor global with the same name */
 static void test_child_option_shadows_parent_global(void)
 {
-    ClpError    e;
-    bool        verbose = false, child_verbose = false;
-    DStringView token   = {0};
-    Command    *sub;
-    Option     *v, *t;
-    Command    *root = build_global_tree(&sub, &v, &t, &verbose, &token, false);
-    T_ADD(clp_add_command_option, sub, T_NEW(Option, clp_new_option, "verbose", "v", NULL, &child_verbose, false, false));
-    char    *argv[] = {"prog", "sub", "-v", NULL};
-    Command *cmd    = NULL;
+    clp_error_t     e;
+    bool            verbose = false, child_verbose = false;
+    d_string_view_t token = {0};
+    clp_command_t  *sub;
+    clp_option_t   *v, *t;
+    clp_command_t  *root = build_global_tree(&sub, &v, &t, &verbose, &token, false);
+    T_ADD(clp_add_command_option, sub, T_NEW(clp_option_t, clp_new_option, "verbose", "v", NULL, &child_verbose, false, false));
+    char          *argv[] = {"prog", "sub", "-v", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(child_verbose == true && verbose == false);
     clp_cleanup(root);
@@ -4066,42 +4069,41 @@ static void test_child_option_shadows_parent_global(void)
 /* a non-global parent option stays unknown in the subcommand */
 static void test_non_global_parent_option_unknown_in_child(void)
 {
-    ClpError e;
-    bool     local = false;
-    Command *root  = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Command *sub   = T_NEW(Command, clp_new_command, 1, "sub", NULL, NULL, NULL);
-    T_ADD(clp_add_command_option, root, T_NEW(Option, clp_new_option, "local", "l", NULL, &local, false, false));
+    clp_error_t    e;
+    bool           local = false;
+    clp_command_t *root  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t *sub   = T_NEW(clp_command_t, clp_new_command, 1, "sub", NULL, NULL, NULL);
+    T_ADD(clp_add_command_option, root, T_NEW(clp_option_t, clp_new_option, "local", "l", NULL, &local, false, false));
     T_ADD(clp_add_command_sub_command, root, sub);
-    char    *argv[] = {"prog", "sub", "--local", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "sub", "--local", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_UNKNOWN_OPTION);
     clp_cleanup(root);
 }
 
-
 /* every operand entry is created, registered in order and bound to its dest */
 static void test_insert_operands_creates_and_registers(void)
 {
-    ClpError    e;
-    DStringView host = D_STRING_VIEW_FROM_LITERAL("none");
-    usize       port = 0;
-    DDynArray   rest;
-    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t     e;
+    d_string_view_t host = D_STRING_VIEW_FROM_LITERAL("none");
+    usize           port = 0;
+    d_dyn_array_t   rest;
+    clp_command_t  *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     D_TEST_EXPR(clp_list_init(&rest, &e) == CLP_OK);
 
-    ClpOperandInfo ops[] = {
-        {"host", "host to reach", &host, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
-        {"port", NULL, &port, OPERAND_ACT_SET, TYPE_USIZE, false, check_port_range, NULL},
-        {"rest", NULL, &rest, OPERAND_ACT_LIST, TYPE_STR, false, NULL, NULL},
+    clp_operand_info_t ops[] = {
+        {"host", "host to reach", &host, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, true, NULL, NULL},
+        {"port", NULL, &port, CLP_OPERAND_ACT_SET, CLP_TYPE_USIZE, false, check_port_range, NULL},
+        {"rest", NULL, &rest, CLP_OPERAND_ACT_LIST, CLP_TYPE_STR, false, NULL, NULL},
     };
     D_TEST_EXPR(clp_insert_operands(root, ops, sizeof(ops) / sizeof(*ops), &e) == CLP_OK);
     D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 3);
-    DDynArray *operands = &root->operands;
-    Operand   *o_port   = d_dyn_array_get_elem_deref_addr_at_safe(operands, 1);
+    d_dyn_array_t *operands = &root->operands;
+    clp_operand_t *o_port   = d_dyn_array_get_elem_deref_addr_at_safe(operands, 1);
     D_TEST_EXPR(o_port->dest == &port && o_port->checker == check_port_range && o_port->required == false);
 
-    char    *argv[] = {"prog", "example.com", "443", "x", "y", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"prog", "example.com", "443", "x", "y", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(d_string_view_compare_against_c_string(host, "example.com"));
     D_TEST_EXPR(port == 443);
@@ -4113,8 +4115,8 @@ static void test_insert_operands_creates_and_registers(void)
 /* count 0 is a no-op, infos may then be NULL */
 static void test_insert_operands_empty(void)
 {
-    ClpError e;
-    Command *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t    e;
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
     D_TEST_EXPR(clp_insert_operands(root, NULL, 0, &e) == CLP_OK);
     D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 0);
     clp_cleanup(root);
@@ -4123,14 +4125,14 @@ static void test_insert_operands_empty(void)
 /* a required operand after an optional one stops the insertion; earlier entries stay */
 static void test_insert_operands_stops_on_order_error(void)
 {
-    ClpError    e;
-    DStringView a = {0}, b = {0}, c = {0};
-    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t     e;
+    d_string_view_t a = {0}, b = {0}, c = {0};
+    clp_command_t  *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
 
-    ClpOperandInfo ops[] = {
-        {"first", NULL, &a, OPERAND_ACT_SET, TYPE_STR, false, NULL, NULL},
-        {"second", NULL, &b, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
-        {"third", NULL, &c, OPERAND_ACT_SET, TYPE_STR, false, NULL, NULL},
+    clp_operand_info_t ops[] = {
+        {"first", NULL, &a, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, false, NULL, NULL},
+        {"second", NULL, &b, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, true, NULL, NULL},
+        {"third", NULL, &c, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, false, NULL, NULL},
     };
     D_TEST_EXPR(clp_insert_operands(root, ops, sizeof(ops) / sizeof(*ops), &e) == CLP_ERR_OPERAND_ORDER);
     D_TEST_EXPR(e.code == CLP_ERR_OPERAND_ORDER);
@@ -4142,21 +4144,21 @@ static void test_insert_operands_stops_on_order_error(void)
 /* an entry clp_new_operand_raw rejects stops the insertion with its status */
 static void test_insert_operands_stops_on_invalid_entry(void)
 {
-    ClpError    e;
-    DStringView s = {0};
-    usize       n = 0;
-    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_error_t     e;
+    d_string_view_t s    = {0};
+    usize           n    = 0;
+    clp_command_t  *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
 
-    ClpOperandInfo bad_name[] = {
-        {"file", NULL, &s, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
-        {"", NULL, &s, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+    clp_operand_info_t bad_name[] = {
+        {"file", NULL, &s, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, true, NULL, NULL},
+        {"", NULL, &s, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, true, NULL, NULL},
     };
     D_TEST_EXPR(clp_insert_operands(root, bad_name, 2, &e) == CLP_ERR_INVALID_NAME);
     D_TEST_EXPR(e.code == CLP_ERR_INVALID_NAME);
     D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 1);
 
-    ClpOperandInfo bad_type[] = {
-        {"num", NULL, &n, OPERAND_ACT_SET, TYPE_USIZE, true, check_port_range, parse_ts},
+    clp_operand_info_t bad_type[] = {
+        {"num", NULL, &n, CLP_OPERAND_ACT_SET, CLP_TYPE_USIZE, true, check_port_range, parse_ts},
     };
     D_TEST_EXPR(clp_insert_operands(root, bad_type, 1, &e) == CLP_ERR_INVALID_TYPE);
     D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 1);
@@ -4166,14 +4168,14 @@ static void test_insert_operands_stops_on_invalid_entry(void)
 /* operands cannot go on a command that already has subcommands */
 static void test_insert_operands_conflict_with_subcommands(void)
 {
-    ClpError    e;
-    DStringView s = {0};
-    Command    *root = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Command    *sub  = T_NEW(Command, clp_new_command, 0, "sub", NULL, NULL, NULL);
+    clp_error_t     e;
+    d_string_view_t s    = {0};
+    clp_command_t  *root = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t  *sub  = T_NEW(clp_command_t, clp_new_command, 0, "sub", NULL, NULL, NULL);
     T_ADD(clp_add_command_sub_command, root, sub);
 
-    ClpOperandInfo ops[] = {
-        {"file", NULL, &s, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+    clp_operand_info_t ops[] = {
+        {"file", NULL, &s, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, true, NULL, NULL},
     };
     D_TEST_EXPR(clp_insert_operands(root, ops, 1, &e) == CLP_ERR_CONFLICT);
     D_TEST_EXPR(d_dyn_array_get_size(&root->operands) == 0);
@@ -4184,26 +4186,26 @@ static void test_insert_operands_conflict_with_subcommands(void)
 
 typedef struct
 {
-    int     calls;
-    Option *flood;
-    Option *interval;
-} ValidatorCtx;
+    int           calls;
+    clp_option_t *flood;
+    clp_option_t *interval;
+} validator_ctx_t;
 
 /* ping-like rule: --flood and --interval are mutually exclusive */
 static const char *validate_flood_interval(void *ctx)
 {
-    ValidatorCtx *v = ctx;
+    validator_ctx_t *v = ctx;
     v->calls++;
     if (v->flood->value_set && v->interval->value_set)
         return "-f and -i are incompatible";
     return NULL;
 }
 
-static Command *make_validated_root(ValidatorCtx *v, bool *flood, long *interval)
+static clp_command_t *make_validated_root(validator_ctx_t *v, bool *flood, long *interval)
 {
-    Command *root = T_NEW(Command, clp_new_command, 0, "ping", NULL, validate_flood_interval, v);
-    v->flood      = T_NEW(Option, clp_new_option, "flood", "f", NULL, flood, false, false);
-    v->interval   = T_NEW(Option, clp_new_option, "interval", "i", NULL, interval, false, false);
+    clp_command_t *root = T_NEW(clp_command_t, clp_new_command, 0, "ping", NULL, validate_flood_interval, v);
+    v->flood            = T_NEW(clp_option_t, clp_new_option, "flood", "f", NULL, flood, false, false);
+    v->interval         = T_NEW(clp_option_t, clp_new_option, "interval", "i", NULL, interval, false, false);
     T_ADD(clp_add_command_option, root, v->flood);
     T_ADD(clp_add_command_option, root, v->interval);
     return root;
@@ -4212,9 +4214,9 @@ static Command *make_validated_root(ValidatorCtx *v, bool *flood, long *interval
 /* the constructor stores validator and ctx */
 static void test_validator_stored_by_constructor(void)
 {
-    ValidatorCtx v     = {0};
-    Command     *plain = T_NEW(Command, clp_new_command, 0, "prog", NULL, NULL, NULL);
-    Command     *hook  = T_NEW(Command, clp_new_command, 0, "prog", NULL, validate_flood_interval, &v);
+    validator_ctx_t v     = {0};
+    clp_command_t  *plain = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, NULL, NULL);
+    clp_command_t  *hook  = T_NEW(clp_command_t, clp_new_command, 0, "prog", NULL, validate_flood_interval, &v);
     D_TEST_EXPR(plain->validator == NULL && plain->ctx == NULL);
     D_TEST_EXPR(hook->validator == validate_flood_interval && hook->ctx == &v);
     clp_cleanup(plain);
@@ -4224,13 +4226,13 @@ static void test_validator_stored_by_constructor(void)
 /* accepted: runs once, after values were bound, and parsing succeeds */
 static void test_validator_accepts(void)
 {
-    ClpError     e;
-    ValidatorCtx v        = {0};
-    bool         flood    = false;
-    long         interval = 1;
-    Command     *root     = make_validated_root(&v, &flood, &interval);
-    char        *argv[]   = {"ping", "-i", "5", NULL};
-    Command     *cmd      = NULL;
+    clp_error_t     e;
+    validator_ctx_t v        = {0};
+    bool            flood    = false;
+    long            interval = 1;
+    clp_command_t  *root     = make_validated_root(&v, &flood, &interval);
+    char           *argv[]   = {"ping", "-i", "5", NULL};
+    clp_command_t  *cmd      = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(v.calls == 1);
     D_TEST_EXPR(interval == 5 && flood == false);
@@ -4240,13 +4242,13 @@ static void test_validator_accepts(void)
 /* rejected: CLP_ERR_VALIDATOR, the command, and its message with the command name */
 static void test_validator_rejects(void)
 {
-    ClpError     e;
-    ValidatorCtx v        = {0};
-    bool         flood    = false;
-    long         interval = 1;
-    Command     *root     = make_validated_root(&v, &flood, &interval);
-    char        *argv[]   = {"ping", "-f", "-i", "5", NULL};
-    Command     *cmd      = NULL;
+    clp_error_t     e;
+    validator_ctx_t v        = {0};
+    bool            flood    = false;
+    long            interval = 1;
+    clp_command_t  *root     = make_validated_root(&v, &flood, &interval);
+    char           *argv[]   = {"ping", "-f", "-i", "5", NULL};
+    clp_command_t  *cmd      = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_VALIDATOR);
     D_TEST_EXPR(v.calls == 1);
     D_TEST_EXPR(e.code == CLP_ERR_VALIDATOR && e.command == root);
@@ -4257,13 +4259,13 @@ static void test_validator_rejects(void)
 /* runs even when the command gets no arguments at all */
 static void test_validator_runs_without_args(void)
 {
-    ClpError     e;
-    ValidatorCtx v        = {0};
-    bool         flood    = false;
-    long         interval = 1;
-    Command     *root     = make_validated_root(&v, &flood, &interval);
-    char        *argv[]   = {"ping", NULL};
-    Command     *cmd      = NULL;
+    clp_error_t     e;
+    validator_ctx_t v        = {0};
+    bool            flood    = false;
+    long            interval = 1;
+    clp_command_t  *root     = make_validated_root(&v, &flood, &interval);
+    char           *argv[]   = {"ping", NULL};
+    clp_command_t  *cmd      = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_OK);
     D_TEST_EXPR(v.calls == 1);
     clp_cleanup(root);
@@ -4272,15 +4274,15 @@ static void test_validator_runs_without_args(void)
 /* not run when parsing already failed, nor when a required argument is missing */
 static void test_validator_skipped_on_earlier_error(void)
 {
-    ClpError     e;
-    ValidatorCtx v        = {0};
-    bool         flood    = false;
-    long         interval = 1;
-    DStringView  host     = {0};
-    Command     *root     = make_validated_root(&v, &flood, &interval);
-    Operand     *op       = T_NEW(Operand, clp_new_operand, "host", NULL, &host, true);
+    clp_error_t     e;
+    validator_ctx_t v        = {0};
+    bool            flood    = false;
+    long            interval = 1;
+    d_string_view_t host     = {0};
+    clp_command_t  *root     = make_validated_root(&v, &flood, &interval);
+    clp_operand_t  *op       = T_NEW(clp_operand_t, clp_new_operand, "host", NULL, &host, true);
     T_ADD(clp_add_command_operand, root, op);
-    Command *cmd = NULL;
+    clp_command_t *cmd = NULL;
 
     char *bad_value[] = {"ping", "-i", "x", "h", NULL};
     D_TEST_EXPR(clp_try_parse_args(root, bad_value, &cmd, &e) == CLP_ERR_BAD_VALUE);
@@ -4293,20 +4295,20 @@ static void test_validator_skipped_on_earlier_error(void)
 /* only the validator of the command parsing ends on runs */
 static void test_validator_only_on_matched_command(void)
 {
-    ClpError     e;
-    ValidatorCtx root_v = {0}, sub_v = {0};
-    bool         flood = false, sub_flood = false;
-    long         interval = 1, sub_interval = 1;
-    Command     *root = make_validated_root(&root_v, &flood, &interval);
-    Command     *sub  = T_NEW(Command, clp_new_command, 1, "sub", NULL, validate_flood_interval, &sub_v);
-    sub_v.flood       = T_NEW(Option, clp_new_option, "flood", "f", NULL, &sub_flood, false, false);
-    sub_v.interval    = T_NEW(Option, clp_new_option, "interval", "i", NULL, &sub_interval, false, false);
+    clp_error_t     e;
+    validator_ctx_t root_v = {0}, sub_v = {0};
+    bool            flood = false, sub_flood = false;
+    long            interval = 1, sub_interval = 1;
+    clp_command_t  *root = make_validated_root(&root_v, &flood, &interval);
+    clp_command_t  *sub  = T_NEW(clp_command_t, clp_new_command, 1, "sub", NULL, validate_flood_interval, &sub_v);
+    sub_v.flood          = T_NEW(clp_option_t, clp_new_option, "flood", "f", NULL, &sub_flood, false, false);
+    sub_v.interval       = T_NEW(clp_option_t, clp_new_option, "interval", "i", NULL, &sub_interval, false, false);
     T_ADD(clp_add_command_option, sub, sub_v.flood);
     T_ADD(clp_add_command_option, sub, sub_v.interval);
     T_ADD(clp_add_command_sub_command, root, sub);
 
-    char    *argv[] = {"ping", "sub", "-f", "-i", "2", NULL};
-    Command *cmd    = NULL;
+    char          *argv[] = {"ping", "sub", "-f", "-i", "2", NULL};
+    clp_command_t *cmd    = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, &e) == CLP_ERR_VALIDATOR);
     D_TEST_EXPR(cmd == sub && e.command == sub);
     D_TEST_NOT_NULL(strstr(e.message, "command sub: "));
@@ -4317,12 +4319,12 @@ static void test_validator_only_on_matched_command(void)
 /* a NULL err from the caller is fine: only the status comes back */
 static void test_validator_with_null_err(void)
 {
-    ValidatorCtx v        = {0};
-    bool         flood    = false;
-    long         interval = 1;
-    Command     *root     = make_validated_root(&v, &flood, &interval);
-    char        *argv[]   = {"ping", "-f", "-i", "5", NULL};
-    Command     *cmd      = NULL;
+    validator_ctx_t v        = {0};
+    bool            flood    = false;
+    long            interval = 1;
+    clp_command_t  *root     = make_validated_root(&v, &flood, &interval);
+    char           *argv[]   = {"ping", "-f", "-i", "5", NULL};
+    clp_command_t  *cmd      = NULL;
     D_TEST_EXPR(clp_try_parse_args(root, argv, &cmd, NULL) == CLP_ERR_VALIDATOR);
     D_TEST_EXPR(v.calls == 1);
     clp_cleanup(root);
@@ -4331,7 +4333,7 @@ static void test_validator_with_null_err(void)
 int main(void)
 {
     atexit(t_release_dests);
-    DTest tests[] = {
+    d_test_t tests[] = {
         /* transform */
         D_TEST_GENERATE_TEST(test_option_transform_receives_raw_arg),
         D_TEST_GENERATE_TEST(test_option_transform_rejects_and_absent),

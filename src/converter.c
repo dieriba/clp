@@ -6,7 +6,7 @@
 #define TRUE_STR "true"
 #define FALSE_STR "false"
 
-char *s_to_usize(const char *s, Value *value)
+char *s_to_usize(const char *s, clp_value_t *value)
 {
     char *endptr;
     errno              = 0;
@@ -20,10 +20,10 @@ char *s_to_usize(const char *s, Value *value)
     return NULL;
 }
 
-char *s_to_long(const char *s, Value *value)
+char *s_to_long(const char *s, clp_value_t *value)
 {
     char *endptr;
-    errno              = 0;
+    errno             = 0;
     value->value_long = strtol(s, &endptr, 10);
 
     if (errno == ERANGE)
@@ -34,7 +34,7 @@ char *s_to_long(const char *s, Value *value)
     return NULL;
 }
 
-char *s_to_double(const char *s, Value *value)
+char *s_to_double(const char *s, clp_value_t *value)
 {
     char *endptr;
     value->value_double = strtod(s, &endptr);
@@ -46,7 +46,7 @@ char *s_to_double(const char *s, Value *value)
     return NULL;
 }
 
-char *s_to_char(const char *s, Value *value)
+char *s_to_char(const char *s, clp_value_t *value)
 {
     char c = s[0];
     if (c == 0)
@@ -57,13 +57,13 @@ char *s_to_char(const char *s, Value *value)
     return NULL;
 }
 
-char *s_to_string(const char *s, Value *value)
+char *s_to_string(const char *s, clp_value_t *value)
 {
     value->value_d_string_view = d_string_view_from_c_string(s);
     return NULL;
 }
 
-char *s_to_bool(const char *s, Value *value)
+char *s_to_bool(const char *s, clp_value_t *value)
 {
     if (PSEUDO_FAST_STRCMP(s, TRUE_STR))
         value->value_bool = true;
@@ -74,23 +74,23 @@ char *s_to_bool(const char *s, Value *value)
     return NULL;
 }
 
-const char *type_to_str(Type type)
+const char *type_to_str(clp_type_t type)
 {
     switch (type)
     {
-    case TYPE_LONG:
+    case CLP_TYPE_LONG:
         return "long";
-    case TYPE_BOOL:
+    case CLP_TYPE_BOOL:
         return "bool";
-    case TYPE_USIZE:
+    case CLP_TYPE_USIZE:
         return "usize";
-    case TYPE_STR:
+    case CLP_TYPE_STR:
         return "str";
-    case TYPE_CHAR:
+    case CLP_TYPE_CHAR:
         return "char";
-    case TYPE_DOUBLE:
+    case CLP_TYPE_DOUBLE:
         return "double";
-    case TYPE_CUSTOM:
+    case CLP_TYPE_CUSTOM:
         return "value";
     default:
         break;
@@ -98,21 +98,21 @@ const char *type_to_str(Type type)
     return "UNKNOWN TYPE";
 }
 
-ConversionFn type_to_conversion_fn(Type type)
+conversion_fn_t type_to_conversion_fn(clp_type_t type)
 {
     switch (type)
     {
-    case TYPE_USIZE:
+    case CLP_TYPE_USIZE:
         return s_to_usize;
-    case TYPE_LONG:
+    case CLP_TYPE_LONG:
         return s_to_long;
-    case TYPE_STR:
+    case CLP_TYPE_STR:
         return s_to_string;
-    case TYPE_CHAR:
+    case CLP_TYPE_CHAR:
         return s_to_char;
-    case TYPE_DOUBLE:
+    case CLP_TYPE_DOUBLE:
         return s_to_double;
-    case TYPE_BOOL:
+    case CLP_TYPE_BOOL:
         return s_to_bool;
     default:
         break;

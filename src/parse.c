@@ -16,30 +16,29 @@
 #define NUMERIC "0123456789"
 #define UNDERSCORE "_"
 
-
-static Option *find_option_by_short(Command *command, char shrt)
+static clp_option_t *find_option_by_short(clp_command_t *command, char shrt)
 {
-    for (Command *level = command; level != NULL; level = level->parent_command)
+    for (clp_command_t *level = command; level != NULL; level = level->parent_command)
     {
-        Option *opt = clp_get_option_by_short(level, shrt);
+        clp_option_t *opt = clp_get_option_by_short(level, shrt);
         if (opt != NULL && (level == command || opt->global))
             return opt;
     }
     return NULL;
 }
 
-static Option *find_option_by_long(Command *command, DStringView lng)
+static clp_option_t *find_option_by_long(clp_command_t *command, d_string_view_t lng)
 {
-    for (Command *level = command; level != NULL; level = level->parent_command)
+    for (clp_command_t *level = command; level != NULL; level = level->parent_command)
     {
-        Option *opt = clp_get_option_by_long(level, lng);
+        clp_option_t *opt = clp_get_option_by_long(level, lng);
         if (opt != NULL && (level == command || opt->global))
             return opt;
     }
     return NULL;
 }
 
-bool is_valid_long(DStringView lng)
+bool is_valid_long(d_string_view_t lng)
 {
     if (lng.size == 0 || lng.data[0] == '-' || lng.data[0] == '_' ||
         d_string_view_find_first_char_not_in_set_from_start(lng, D_STRING_VIEW_FROM_LITERAL(ALPHABET_LOWERCASE ALPHABET_UPPERCASE HYPHEN UNDERSCORE NUMERIC)) != MAX_SIZE_T_VALUE)
@@ -47,7 +46,7 @@ bool is_valid_long(DStringView lng)
     return true;
 }
 
-static ClpStatus check_valid_long_opt_name(Command *root, DStringView long_opt, ClpError *err)
+static clp_status_t check_valid_long_opt_name(clp_command_t *root, d_string_view_t long_opt, clp_error_t *err)
 {
     if (is_valid_long(long_opt))
         return CLP_OK;
@@ -55,15 +54,15 @@ static ClpStatus check_valid_long_opt_name(Command *root, DStringView long_opt, 
                       long_opt.data);
 }
 
-static ClpStatus add_new_kv_pairs(Command *root, DUnorderedMap *kv, ClpChecker checker, const char *kv_pairs, const char *prefix, const char *arg_name, int arg_len, ClpError *err)
+static clp_status_t add_new_kv_pairs(clp_command_t *root, d_unordered_map_t *kv, clp_checker_t checker, const char *kv_pairs, const char *prefix, const char *arg_name, int arg_len, clp_error_t *err)
 {
-    DStringView list = d_string_view_from_c_string(kv_pairs);
-    usize       i = 0, j = 0;
+    d_string_view_t list = d_string_view_from_c_string(kv_pairs);
+    usize           i = 0, j = 0;
     while (1)
     {
-        j                  = d_string_view_find_first_matching_char_from_index(list, ',', i);
-        DStringView sub    = d_string_view_subview(list, i, j - i);
-        usize       eq_pos = d_string_view_find_first_matching_char_from_index(sub, '=', 0);
+        j                      = d_string_view_find_first_matching_char_from_index(list, ',', i);
+        d_string_view_t sub    = d_string_view_subview(list, i, j - i);
+        usize           eq_pos = d_string_view_find_first_matching_char_from_index(sub, '=', 0);
 
         if (eq_pos == MAX_SIZE_T_VALUE)
             return error_fail(err, CLP_ERR_BAD_KV, root, "command %s: '%s%.*s': '%.*s' is not a valid key=value pair (missing '=')\n", root->name.data, prefix, arg_len, arg_name, (int) sub.size,
@@ -72,16 +71,16 @@ static ClpStatus add_new_kv_pairs(Command *root, DUnorderedMap *kv, ClpChecker c
             return error_fail(err, CLP_ERR_BAD_KV, root, "command %s: '%s%.*s': '%.*s' has an empty key (expected 'key=value')\n", root->name.data, prefix, arg_len, arg_name, (int) sub.size,
                               sub.data);
 
-        DStringView key = d_string_view_subview(sub, 0, eq_pos);
+        d_string_view_t key = d_string_view_subview(sub, 0, eq_pos);
 
         if (eq_pos + 1 >= sub.size)
             return error_fail(err, CLP_ERR_BAD_KV, root, "command %s: '%s%.*s': key '%.*s' has an empty value (expected 'key=value')\n", root->name.data, prefix, arg_len, arg_name, (int) key.size,
                               key.data);
 
-        DStringView value_str = d_string_view_subview(sub, eq_pos + 1, MAX_SIZE_T_VALUE);
-        DResult     result;
-        const char *err_msg;
-        if (checker && (err_msg = checker(&(ClpKeyValue){.key = key, .value = value_str})) != NULL)
+        d_string_view_t value_str = d_string_view_subview(sub, eq_pos + 1, MAX_SIZE_T_VALUE);
+        d_result_t      result;
+        const char     *err_msg;
+        if (checker && (err_msg = checker(&(clp_key_value_t){.key = key, .value = value_str})) != NULL)
             return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%.*s' for '%s%.*s': %s\n", root->name.data, (int) sub.size, sub.data, prefix, arg_len, arg_name, err_msg);
         if ((result = d_unordered_map_insert(kv, &key, &value_str)) != D_OK)
             return error_fail(err, CLP_ERR_ALLOC, root, "command %s: '%s%.*s': failed to store key '%.*s': %s\n", root->name.data, prefix, arg_len, arg_name, (int) key.size, key.data,
@@ -93,41 +92,41 @@ static ClpStatus add_new_kv_pairs(Command *root, DUnorderedMap *kv, ClpChecker c
     return CLP_OK;
 }
 
-static void bind(Type type, const Value *value, void *dest)
+static void bind(clp_type_t type, const clp_value_t *value, void *dest)
 {
     switch (type)
     {
-    case TYPE_BOOL:
+    case CLP_TYPE_BOOL:
         *(bool *) dest = value->value_bool;
         break;
-    case TYPE_LONG:
+    case CLP_TYPE_LONG:
         *(long *) dest = value->value_long;
         break;
-    case TYPE_USIZE:
+    case CLP_TYPE_USIZE:
         *(usize *) dest = value->value_usize;
         break;
-    case TYPE_STR:
-        *(DStringView *) dest = value->value_d_string_view;
+    case CLP_TYPE_STR:
+        *(d_string_view_t *) dest = value->value_d_string_view;
         break;
-    case TYPE_CHAR:
+    case CLP_TYPE_CHAR:
         *(char *) dest = value->value_char;
         break;
-    case TYPE_DOUBLE:
+    case CLP_TYPE_DOUBLE:
         *(double *) dest = value->value_double;
         break;
-    case TYPE_CUSTOM:
+    case CLP_TYPE_CUSTOM:
         break;
     }
 }
 
-static ClpStatus bind_opt_value(Command *root, Option *opt, const char *operand, char *prefix, const char *opt_name, usize len_name, ClpError *err)
+static clp_status_t bind_opt_value(clp_command_t *root, clp_option_t *opt, const char *operand, char *prefix, const char *opt_name, usize len_name, clp_error_t *err)
 {
-    ConversionFn conversion_fn = type_to_conversion_fn(opt->type);
+    conversion_fn_t conversion_fn = type_to_conversion_fn(opt->type);
 
     switch (opt->action)
     {
-    case OPT_ACT_SET:
-        if (opt->type == TYPE_BOOL)
+    case CLP_OPT_ACT_SET:
+        if (opt->type == CLP_TYPE_BOOL)
         {
             *(bool *) opt->dest = true;
             break;
@@ -141,7 +140,7 @@ static ClpStatus bind_opt_value(Command *root, Option *opt, const char *operand,
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '%s%.*s': %s\n", root->name.data, operand, prefix, (int) len_name, opt_name, err_msg);
             break;
         }
-        Value parsed;
+        clp_value_t parsed;
         err_msg = conversion_fn(operand, &parsed);
         if (opt->checker && err_msg == NULL)
             err_msg = opt->checker(&parsed);
@@ -149,20 +148,20 @@ static ClpStatus bind_opt_value(Command *root, Option *opt, const char *operand,
             return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '%s%.*s': %s\n", root->name.data, operand, prefix, (int) len_name, opt_name, err_msg);
         bind(opt->type, &parsed, opt->dest);
         break;
-    case OPT_ACT_COUNT:
+    case CLP_OPT_ACT_COUNT:
         (*(usize *) opt->dest)++;
         break;
-    case OPT_ACT_LIST:
+    case CLP_OPT_ACT_LIST:
         if (operand == NULL)
             return error_fail(err, CLP_ERR_MISSING_ARG, root, "command %s: '%s%.*s' option require an argument\n", root->name.data, prefix, (int) len_name, opt_name);
-        DStringView list = d_string_view_from_c_string(operand);
-        usize       i = 0, j = 0;
+        d_string_view_t list = d_string_view_from_c_string(operand);
+        usize           i = 0, j = 0;
         while (1)
         {
-            j               = d_string_view_find_first_matching_char_from_index(list, ',', i);
-            DStringView sub = d_string_view_subview(list, i, j - i);
-            DResult     result;
-            const char *err_msg;
+            j                   = d_string_view_find_first_matching_char_from_index(list, ',', i);
+            d_string_view_t sub = d_string_view_subview(list, i, j - i);
+            d_result_t      result;
+            const char     *err_msg;
             if (opt->checker && (err_msg = opt->checker(&sub)) != NULL)
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%.*s' for '%s%.*s': %s\n", root->name.data, (int) sub.size, sub.data, prefix, (int) len_name, opt_name,
                                   err_msg);
@@ -173,7 +172,7 @@ static ClpStatus bind_opt_value(Command *root, Option *opt, const char *operand,
             i = j + 1;
         }
         break;
-    case OPT_ACT_KV:
+    case CLP_OPT_ACT_KV:
         if (operand == NULL)
             return error_fail(err, CLP_ERR_MISSING_ARG, root, "command %s: '%s%.*s' option require an argument\n", root->name.data, prefix, (int) len_name, opt_name);
         CLP_TRY(add_new_kv_pairs(root, opt->dest, opt->checker, operand, prefix, opt_name, (int) len_name, err));
@@ -185,23 +184,23 @@ static ClpStatus bind_opt_value(Command *root, Option *opt, const char *operand,
     return CLP_OK;
 }
 
-static ClpStatus bind_operand_value(Command *root, usize cursor, char *raw_operand, char ***argvp, bool consume_all, ClpError *err)
+static clp_status_t bind_operand_value(clp_command_t *root, usize cursor, char *raw_operand, char ***argvp, bool consume_all, clp_error_t *err)
 {
-    DDynArray *operands      = &root->operands;
-    usize      operands_size = d_dyn_array_get_size(operands);
-    char     **argv          = *argvp;
+    d_dyn_array_t *operands      = &root->operands;
+    usize          operands_size = d_dyn_array_get_size(operands);
+    char         **argv          = *argvp;
 
     if (raw_operand == NULL)
         return CLP_OK;
     if (cursor >= operands_size)
         return error_fail(err, CLP_ERR_TOO_MANY_OPERANDS, root, "command %s: too many operands provided\n", root->name.data);
 
-    Operand     *operand       = d_dyn_array_get_elem_deref_addr_at_safe(operands, cursor);
-    ConversionFn conversion_fn = type_to_conversion_fn(operand->type);
+    clp_operand_t  *operand       = d_dyn_array_get_elem_deref_addr_at_safe(operands, cursor);
+    conversion_fn_t conversion_fn = type_to_conversion_fn(operand->type);
 
     switch (operand->action)
     {
-    case OPERAND_ACT_SET:
+    case CLP_OPERAND_ACT_SET:
         const char *err_msg;
         if (operand->transform)
         {
@@ -210,7 +209,7 @@ static ClpStatus bind_operand_value(Command *root, usize cursor, char *raw_opera
             argv++;
             break;
         }
-        Value parsed;
+        clp_value_t parsed;
         err_msg = conversion_fn(raw_operand, &parsed);
         if (operand->checker && err_msg == NULL)
             err_msg = operand->checker(&parsed);
@@ -219,12 +218,12 @@ static ClpStatus bind_operand_value(Command *root, usize cursor, char *raw_opera
         bind(operand->type, &parsed, operand->dest);
         argv++;
         break;
-    case OPERAND_ACT_LIST:
+    case CLP_OPERAND_ACT_LIST:
         while (1)
         {
-            DStringView sub = d_string_view_from_c_string(raw_operand);
-            DResult     result;
-            const char *err_msg;
+            d_string_view_t sub = d_string_view_from_c_string(raw_operand);
+            d_result_t      result;
+            const char     *err_msg;
             if (operand->checker && (err_msg = operand->checker(&sub)) != NULL)
                 return error_fail(err, CLP_ERR_BAD_VALUE, root, "command %s: invalid value '%s' for '<%s>': %s\n", root->name.data, raw_operand, operand->name.data, err_msg);
             if ((result = d_dyn_array_push_back(operand->dest, &sub)) != D_OK)
@@ -234,7 +233,7 @@ static ClpStatus bind_operand_value(Command *root, usize cursor, char *raw_opera
                 break;
         }
         break;
-    case OPERAND_ACT_KV:
+    case CLP_OPERAND_ACT_KV:
         CLP_TRY(add_new_kv_pairs(root, operand->dest, operand->checker, raw_operand, "", operand->name.data, (int) operand->name.size, err));
         argv++;
         break;
@@ -246,7 +245,7 @@ static ClpStatus bind_operand_value(Command *root, usize cursor, char *raw_opera
     return CLP_OK;
 }
 
-static ClpStatus parse_remaining_operands(Command *root, usize *operand_cursor, char ***argvp, ClpError *err)
+static clp_status_t parse_remaining_operands(clp_command_t *root, usize *operand_cursor, char ***argvp, clp_error_t *err)
 {
     usize cursor = *operand_cursor;
     while (**argvp != NULL)
@@ -260,16 +259,16 @@ static ClpStatus parse_remaining_operands(Command *root, usize *operand_cursor, 
     return CLP_OK;
 }
 
-static ClpStatus parse_long_opt(Command *root, char *lng_opt, char ***argvp, ClpError *err)
+static clp_status_t parse_long_opt(clp_command_t *root, char *lng_opt, char ***argvp, clp_error_t *err)
 {
-    char      **argv             = *argvp;
-    DStringView long_opt         = d_string_view_from_c_string(lng_opt);
-    usize       eq_pos           = d_string_view_find_first_matching_char_from_start(long_opt, '=');
-    bool        has_inline_value = eq_pos != MAX_SIZE_T_VALUE;
+    char          **argv             = *argvp;
+    d_string_view_t long_opt         = d_string_view_from_c_string(lng_opt);
+    usize           eq_pos           = d_string_view_find_first_matching_char_from_start(long_opt, '=');
+    bool            has_inline_value = eq_pos != MAX_SIZE_T_VALUE;
     if (has_inline_value)
         long_opt = d_string_view_subview(long_opt, 0, eq_pos);
     CLP_TRY(check_valid_long_opt_name(root, long_opt, err));
-    Option *opt = find_option_by_long(root, long_opt);
+    clp_option_t *opt = find_option_by_long(root, long_opt);
     CLP_TRY(check_help_or_invalid_opt(root, opt, DOUBLE_HYPHEN, long_opt.data, long_opt.size, err));
     if (has_inline_value && opt->has_args == false)
         return error_fail(err, CLP_ERR_UNEXPECTED_ARG, root, "command %s: option '--%s' doesn't allow an argument\n", root->name.data, opt->long_name.data);
@@ -279,13 +278,13 @@ static ClpStatus parse_long_opt(Command *root, char *lng_opt, char ***argvp, Clp
     return CLP_OK;
 }
 
-static ClpStatus parse_short_opts(Command *root, char *short_opt, char ***argvp, ClpError *err)
+static clp_status_t parse_short_opts(clp_command_t *root, char *short_opt, char ***argvp, clp_error_t *err)
 {
     char **argv = *argvp;
     usize  i    = 0;
     do
     {
-        Option *opt = find_option_by_short(root, short_opt[i]);
+        clp_option_t *opt = find_option_by_short(root, short_opt[i]);
         CLP_TRY(check_help_or_invalid_opt(root, opt, HYPHEN, &short_opt[i], 1, err));
         if (opt->has_args == true)
         {
@@ -300,7 +299,7 @@ static ClpStatus parse_short_opts(Command *root, char *short_opt, char ***argvp,
     return CLP_OK;
 }
 
-static ClpStatus interpret_hyphen(Command *root, char *arg, char ***argvp, usize *operand_cusor, ClpError *err)
+static clp_status_t interpret_hyphen(clp_command_t *root, char *arg, char ***argvp, usize *operand_cusor, clp_error_t *err)
 {
     ++*argvp;
     if (STR_STARTS_WITH_HYPEN(arg))
@@ -312,7 +311,7 @@ static ClpStatus interpret_hyphen(Command *root, char *arg, char ***argvp, usize
     return parse_short_opts(root, arg, argvp, err);
 }
 
-static ClpStatus finish_command(Command *root, ClpError *err)
+static clp_status_t finish_command(clp_command_t *root, clp_error_t *err)
 {
     CLP_TRY(check_required_args(root, err));
 
@@ -322,13 +321,13 @@ static ClpStatus finish_command(Command *root, ClpError *err)
     return CLP_OK;
 }
 
-ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err)
+clp_status_t parse(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err)
 {
     ++argv; // skip program name at first call then skip current command name already parsed
-    char      *s;
-    DDynArray *sub_commands       = &root->sub_commands;
-    usize      sub_commands_size  = d_dyn_array_get_size(sub_commands);
-    usize      cmd_parsed_operand = 0;
+    char          *s;
+    d_dyn_array_t *sub_commands       = &root->sub_commands;
+    usize          sub_commands_size  = d_dyn_array_get_size(sub_commands);
+    usize          cmd_parsed_operand = 0;
 
     if (*argv == NULL)
         return finish_command(root, err);
@@ -343,7 +342,7 @@ ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err)
 
         for (usize i = 0; i < sub_commands_size; i++)
         {
-            Command *sub_cmd = d_dyn_array_get_elem_deref_addr_at_safe(sub_commands, i);
+            clp_command_t *sub_cmd = d_dyn_array_get_elem_deref_addr_at_safe(sub_commands, i);
             if (d_string_view_compare_against_c_string(sub_cmd->name, s))
             {
                 *command = sub_cmd;

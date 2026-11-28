@@ -3,7 +3,7 @@
 
 #include "clp.h"
 
-void free_command(Command *command);
-void free_option(Option *option);
-void free_operand(Operand *operand);
+void free_command(clp_command_t *command);
+void free_option(clp_option_t *option);
+void free_operand(clp_operand_t *operand);
 #endif

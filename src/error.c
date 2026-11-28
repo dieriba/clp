@@ -5,7 +5,7 @@
 #include <stdarg.h>
 #include <string.h>
 
-static void vappend(ClpError *err, const char *fmt, va_list ap)
+static void vappend(clp_error_t *err, const char *fmt, va_list ap)
 {
     usize len = strlen(err->message);
     if (len + 1 >= sizeof(err->message))
@@ -13,7 +13,7 @@ static void vappend(ClpError *err, const char *fmt, va_list ap)
     vsnprintf(err->message + len, sizeof(err->message) - len, fmt, ap);
 }
 
-ClpStatus error_fail(ClpError *err, ClpStatus code, Command *command, const char *fmt, ...)
+clp_status_t error_fail(clp_error_t *err, clp_status_t code, clp_command_t *command, const char *fmt, ...)
 {
     if (err == NULL)
         return code;
@@ -28,7 +28,7 @@ ClpStatus error_fail(ClpError *err, ClpStatus code, Command *command, const char
     return code;
 }
 
-void error_append(ClpError *err, const char *fmt, ...)
+void error_append(clp_error_t *err, const char *fmt, ...)
 {
     if (err == NULL)
         return;
@@ -38,7 +38,7 @@ void error_append(ClpError *err, const char *fmt, ...)
     va_end(ap);
 }
 
-void clp_print_error(FILE *stream, const ClpError *err)
+void clp_print_error(FILE *stream, const clp_error_t *err)
 {
     if (err->code == CLP_OK || err->code == CLP_HELP_SHOWN)
         return;
@@ -50,7 +50,7 @@ void clp_print_error(FILE *stream, const ClpError *err)
     }
 }
 
-const char *clp_status_to_str(ClpStatus code)
+const char *clp_status_to_str(clp_status_t code)
 {
     switch (code)
     {

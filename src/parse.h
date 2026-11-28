@@ -2,7 +2,7 @@
 #define PARSE_H
 #include "clp.h"
 
-ClpStatus parse(Command *root, char **argv, Command **command, ClpError *err);
-bool      is_valid_long(DStringView lng);
+clp_status_t parse(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err);
+bool         is_valid_long(d_string_view_t lng);
 
 #endif

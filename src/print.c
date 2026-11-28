@@ -9,7 +9,7 @@
 
 #define HELP_COL_GAP 4
 
-static usize opt_name_width(Option *opt)
+static usize opt_name_width(clp_option_t *opt)
 {
     usize w         = 0;
     bool  has_short = opt->short_name != (char) FLAG_SHORT_OPT_NOT_SET;
@@ -28,46 +28,46 @@ static usize opt_name_width(Option *opt)
     return w;
 }
 
-static usize sub_cmd_name_width(Command *cmd)
+static usize sub_cmd_name_width(clp_command_t *cmd)
 {
     return cmd->name.size;
 }
 
-static usize operand_name_width(Operand *op)
+static usize operand_name_width(clp_operand_t *op)
 {
     return op->name.size + 2; /* <name> */
 }
 
-static usize max_col_width(Command *root)
+static usize max_col_width(clp_command_t *root)
 {
     usize max = 0;
 
-    DDynArray *opts = &root->options;
-    usize      size = d_dyn_array_get_size(opts);
+    d_dyn_array_t *opts = &root->options;
+    usize          size = d_dyn_array_get_size(opts);
     for (usize i = 0; i < size; i++)
     {
-        Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
-        usize   w   = opt_name_width(opt);
+        clp_option_t *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
+        usize         w   = opt_name_width(opt);
         if (w > max)
             max = w;
     }
 
-    DDynArray *cmds = &root->sub_commands;
-    size            = d_dyn_array_get_size(cmds);
+    d_dyn_array_t *cmds = &root->sub_commands;
+    size                = d_dyn_array_get_size(cmds);
     for (usize i = 0; i < size; i++)
     {
-        Command *sub = d_dyn_array_get_elem_deref_addr_at_safe(cmds, i);
-        usize    w   = sub_cmd_name_width(sub);
+        clp_command_t *sub = d_dyn_array_get_elem_deref_addr_at_safe(cmds, i);
+        usize          w   = sub_cmd_name_width(sub);
         if (w > max)
             max = w;
     }
 
-    DDynArray *ops = &root->operands;
-    size           = d_dyn_array_get_size(ops);
+    d_dyn_array_t *ops = &root->operands;
+    size               = d_dyn_array_get_size(ops);
     for (usize i = 0; i < size; i++)
     {
-        Operand *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
-        usize    w  = operand_name_width(op);
+        clp_operand_t *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
+        usize          w  = operand_name_width(op);
         if (w > max)
             max = w;
     }
@@ -75,15 +75,15 @@ static usize max_col_width(Command *root)
     return max;
 }
 
-static void print_options(DDynArray *opts, usize col_width)
+static void print_options(d_dyn_array_t *opts, usize col_width)
 {
     usize n = d_dyn_array_get_size(opts);
     for (usize i = 0; i < n; i++)
     {
-        Option *opt       = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
-        bool    has_short = opt->short_name != (char) FLAG_SHORT_OPT_NOT_SET;
-        bool    has_long  = opt->long_name.size > 0;
-        usize   written   = 0;
+        clp_option_t *opt       = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
+        bool          has_short = opt->short_name != (char) FLAG_SHORT_OPT_NOT_SET;
+        bool          has_long  = opt->long_name.size > 0;
+        usize         written   = 0;
 
         printf("  ");
         if (has_short)
@@ -116,52 +116,51 @@ static void print_options(DDynArray *opts, usize col_width)
     }
 }
 
-static void print_sub_commands(DDynArray *cmds, usize col_width)
+static void print_sub_commands(d_dyn_array_t *cmds, usize col_width)
 {
     usize n = d_dyn_array_get_size(cmds);
     for (usize i = 0; i < n; i++)
     {
-        Command *sub = d_dyn_array_get_elem_deref_addr_at_safe(cmds, i);
+        clp_command_t *sub = d_dyn_array_get_elem_deref_addr_at_safe(cmds, i);
         printf("  %.*s%*s%s\n", (int) sub->name.size, sub->name.data, (int) (col_width - sub->name.size + HELP_COL_GAP), "", sub->description);
     }
 }
 
-static void print_operands(DDynArray *ops, usize col_width)
+static void print_operands(d_dyn_array_t *ops, usize col_width)
 {
     usize n = d_dyn_array_get_size(ops);
     for (usize i = 0; i < n; i++)
     {
-        Operand *op     = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
-        usize    name_w = op->name.size + 2;
+        clp_operand_t *op     = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
+        usize          name_w = op->name.size + 2;
         printf("  <%.*s>%*s%s\n", (int) op->name.size, op->name.data, (int) (col_width - name_w + HELP_COL_GAP), "", op->description);
     }
 }
 
-static void print_command_name_from_root_to_current(FILE *stream, char separator, Command *current)
+static void print_command_name_from_root_to_current(FILE *stream, char separator, clp_command_t *current)
 {
     if (current->parent_command)
         print_command_name_from_root_to_current(stream, separator, current->parent_command);
     fprintf(stream, "%s%c", current->name.data, separator);
 }
 
-
-static bool applies_to(Command *command, Command *level, Option *opt)
+static bool applies_to(clp_command_t *command, clp_command_t *level, clp_option_t *opt)
 {
     return level == command || opt->global;
 }
 
-void print_usage_line(FILE *stream, Command *command)
+void print_usage_line(FILE *stream, clp_command_t *command)
 {
     fprintf(stream, "Usage: ");
     print_command_name_from_root_to_current(stream, ' ', command);
     fprintf(stream, "[OPTIONS] ");
 
-    for (Command *level = command; level != NULL; level = level->parent_command)
+    for (clp_command_t *level = command; level != NULL; level = level->parent_command)
     {
-        DDynArray *options = &level->options;
+        d_dyn_array_t *options = &level->options;
         for (size_t i = 0; i < d_dyn_array_get_size(options); i++)
         {
-            Option *option = d_dyn_array_get_elem_deref_addr_at_safe(options, i);
+            clp_option_t *option = d_dyn_array_get_elem_deref_addr_at_safe(options, i);
             if (option->required == false || applies_to(command, level, option) == false)
                 continue;
             if (option->long_name.size != 0)
@@ -178,14 +177,14 @@ void print_usage_line(FILE *stream, Command *command)
         fprintf(stream, "<COMMAND>");
     else if (has_operands)
     {
-        DDynArray *operands = &command->operands;
+        d_dyn_array_t *operands = &command->operands;
         for (size_t i = 0; i < d_dyn_array_get_size(&(command->operands)); i++)
         {
-            Operand *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
+            clp_operand_t *operand = d_dyn_array_get_elem_deref_addr_at_safe(operands, i);
             if (operand->required == false)
                 continue;
             fprintf(stream, "<%s", operand->name.data);
-            if (operand->action == OPERAND_ACT_LIST)
+            if (operand->action == CLP_OPERAND_ACT_LIST)
                 fprintf(stream, " ...");
             fprintf(stream, ">");
             fprintf(stream, " ");
@@ -195,7 +194,7 @@ void print_usage_line(FILE *stream, Command *command)
     fprintf(stream, "\n\n");
 }
 
-static void print_command_help(Command *root)
+static void print_command_help(clp_command_t *root)
 {
     usize col = max_col_width(root);
 
@@ -225,13 +224,13 @@ static void print_command_help(Command *root)
     }
 }
 
-static void print_help(Command *root)
+static void print_help(clp_command_t *root)
 {
     print_usage_line(stdout, root);
     print_command_help(root);
 }
 
-ClpStatus check_help_or_invalid_opt(Command *root, Option *opt, char *prefix, const char *name, usize len, ClpError *err)
+clp_status_t check_help_or_invalid_opt(clp_command_t *root, clp_option_t *opt, char *prefix, const char *name, usize len, clp_error_t *err)
 {
     bool is_long_help  = len == sizeof(HELP_OPT) - 1 && PSEUDO_FAST_STRCMP(name, HELP_OPT);
     bool is_short_help = opt == NULL && prefix[1] == 0 && name[0] == HELP_OPT[0]; // prefix[1] == 0 means short option; only when user has not defined their own -h
@@ -245,14 +244,14 @@ ClpStatus check_help_or_invalid_opt(Command *root, Option *opt, char *prefix, co
     return CLP_OK;
 }
 
-static bool has_missing_option(Command *root)
+static bool has_missing_option(clp_command_t *root)
 {
-    for (Command *level = root; level != NULL; level = level->parent_command)
+    for (clp_command_t *level = root; level != NULL; level = level->parent_command)
     {
-        DDynArray *opts = &level->options;
+        d_dyn_array_t *opts = &level->options;
         for (usize i = 0; i < d_dyn_array_get_size(opts); i++)
         {
-            Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
+            clp_option_t *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
             if (applies_to(root, level, opt) && opt->required == true && opt->value_set == false)
                 return true;
         }
@@ -260,19 +259,19 @@ static bool has_missing_option(Command *root)
     return false;
 }
 
-static bool has_missing_operand(Command *root)
+static bool has_missing_operand(clp_command_t *root)
 {
-    DDynArray *ops = &root->operands;
+    d_dyn_array_t *ops = &root->operands;
     for (usize i = 0; i < d_dyn_array_get_size(ops); i++)
     {
-        Operand *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
+        clp_operand_t *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
         if (op->required == true && op->value_set == false)
             return true;
     }
     return false;
 }
 
-ClpStatus check_required_args(Command *root, ClpError *err)
+clp_status_t check_required_args(clp_command_t *root, clp_error_t *err)
 {
     bool missing_opt     = has_missing_option(root);
     bool missing_operand = has_missing_operand(root);
@@ -285,12 +284,12 @@ ClpStatus check_required_args(Command *root, ClpError *err)
     if (missing_opt)
     {
         error_append(err, "command %s: the following options were not provided:\n", root->name.data);
-        for (Command *level = root; level != NULL; level = level->parent_command)
+        for (clp_command_t *level = root; level != NULL; level = level->parent_command)
         {
-            DDynArray *opts = &level->options;
+            d_dyn_array_t *opts = &level->options;
             for (usize i = 0; i < d_dyn_array_get_size(opts); i++)
             {
-                Option *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
+                clp_option_t *opt = d_dyn_array_get_elem_deref_addr_at_safe(opts, i);
                 if (applies_to(root, level, opt) == false || opt->required == false || opt->value_set == true)
                     continue;
                 if (opt->long_name.size != 0)
@@ -305,10 +304,10 @@ ClpStatus check_required_args(Command *root, ClpError *err)
     if (missing_operand)
     {
         error_append(err, "command %s: the following operands were not provided:\n", root->name.data);
-        DDynArray *ops = &root->operands;
+        d_dyn_array_t *ops = &root->operands;
         for (usize i = 0; i < d_dyn_array_get_size(ops); i++)
         {
-            Operand *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
+            clp_operand_t *op = d_dyn_array_get_elem_deref_addr_at_safe(ops, i);
             if (op->required == true && op->value_set == false)
                 error_append(err, "  <%s>\n", op->name.data);
         }

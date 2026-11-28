@@ -17,15 +17,15 @@ See [BUILDING.md](BUILDING.md).
 A command owns a set of options and either operands **or** subcommands (never both). Every program has a root command; subcommands are nested below it.
 
 ```c
-Command *root, *push;
-ClpError err;
+clp_command_t *root, *push;
+clp_error_t    err;
 if (clp_new_command(&root, 0, "git", "the stupid content tracker", NULL, NULL, &err) != CLP_OK ||
     clp_new_command(&push, 1, "push", "update remote refs", NULL, NULL, &err) != CLP_OK ||
     clp_add_command_sub_command(root, push, &err) != CLP_OK)
     { /* handle err */ }
 ```
 
-After parsing, the `Command **command` out-parameter points to the deepest dispatched subcommand (or stays `NULL` if no command token was found).
+After parsing, the `clp_command_t **command` out-parameter points to the deepest dispatched subcommand (or stays `NULL` if no command token was found).
 
 ### Options
 
@@ -65,7 +65,7 @@ An option marked `global=true` is visible to every descendant command. It is reg
 Every option and operand is bound to a `dest`, a pointer to a variable you own. Parsing writes into it:
 
 - **Default**: initialise `dest` before parsing. If the option is not given, it keeps that value.
-- **`value_set`**: `Option.value_set` / `Operand.value_set` is `true` once a value was given and accepted, so you can tell "given" from "default".
+- **`value_set`**: `clp_option_t.value_set` / `clp_operand_t.value_set` is `true` once a value was given and accepted, so you can tell "given" from "default".
 - **Rejected values never reach `dest`**: a value is converted and checked into scratch storage first, and only copied into `dest` once accepted. `--ttl 12x` leaves `ttl` untouched.
 - **Ownership**: `dest` must outlive parsing. clp never frees it; `clp_cleanup` releases only clp's own objects.
 
@@ -75,38 +75,38 @@ The type is deduced from the `dest` pointer at compile time; any other pointer t
 
 | `dest` type     | Enum          | Notes                                                 |
 | --------------- | ------------- | ----------------------------------------------------- |
-| `bool *`        | `TYPE_BOOL`   | flag: takes no argument, sets `*dest = true`          |
-| `char *`        | `TYPE_CHAR`   | exactly one character                                 |
-| `DStringView *` | `TYPE_STR`    | `.data` points into `argv` and is NUL-terminated      |
-| `long *`        | `TYPE_LONG`   |                                                       |
-| `usize *`       | `TYPE_USIZE`  |                                                       |
-| `double *`      | `TYPE_DOUBLE` |                                                       |
-| _(ctx)_         | `TYPE_CUSTOM` | no `dest`: the argument goes to a transform with its `ctx` (see below) |
+| `bool *`        | `CLP_TYPE_BOOL`   | flag: takes no argument, sets `*dest = true`          |
+| `char *`        | `CLP_TYPE_CHAR`   | exactly one character                                 |
+| `d_string_view_t *` | `CLP_TYPE_STR`    | `.data` points into `argv` and is NUL-terminated      |
+| `long *`        | `CLP_TYPE_LONG`   |                                                       |
+| `usize *`       | `CLP_TYPE_USIZE`  |                                                       |
+| `double *`      | `CLP_TYPE_DOUBLE` |                                                       |
+| _(ctx)_         | `CLP_TYPE_CUSTOM` | no `dest`: the argument goes to a transform with its `ctx` (see below) |
 
 ## Option actions
 
 | Action          | Macro                  | `dest` type       | Notes                                           |
 | --------------- | ---------------------- | ----------------- | ----------------------------------------------- |
-| `OPT_ACT_SET`   | `clp_new_option`       | see value types   | stores one value; `bool *` needs no argument    |
-| `OPT_ACT_COUNT` | `clp_new_option_count` | `usize *`         | increments `*dest` each occurrence; no argument |
-| `OPT_ACT_LIST`  | `clp_new_option_list`  | `DDynArray *`     | comma-split into `DStringView` elements         |
-| `OPT_ACT_KV`    | `clp_new_option_kv`    | `DUnorderedMap *` | `key=value` pairs, comma-separated              |
+| `CLP_OPT_ACT_SET`   | `clp_new_option`       | see value types   | stores one value; `bool *` needs no argument    |
+| `CLP_OPT_ACT_COUNT` | `clp_new_option_count` | `usize *`         | increments `*dest` each occurrence; no argument |
+| `CLP_OPT_ACT_LIST`  | `clp_new_option_list`  | `d_dyn_array_t *`     | comma-split into `d_string_view_t` elements         |
+| `CLP_OPT_ACT_KV`    | `clp_new_option_kv`    | `d_unordered_map_t *` | `key=value` pairs, comma-separated              |
 
 ## Operand actions
 
 | Action             | Macro                  | `dest` type       | Notes                                  |
 | ------------------ | ---------------------- | ----------------- | -------------------------------------- |
-| `OPERAND_ACT_SET`  | `clp_new_operand`      | see value types   | one positional value                   |
-| `OPERAND_ACT_LIST` | `clp_new_operand_list` | `DDynArray *`     | consumes all remaining positional args |
-| `OPERAND_ACT_KV`   | `clp_new_operand_kv`   | `DUnorderedMap *` | `key=value` positional arg             |
+| `CLP_OPERAND_ACT_SET`  | `clp_new_operand`      | see value types   | one positional value                   |
+| `CLP_OPERAND_ACT_LIST` | `clp_new_operand_list` | `d_dyn_array_t *`     | consumes all remaining positional args |
+| `CLP_OPERAND_ACT_KV`   | `clp_new_operand_kv`   | `d_unordered_map_t *` | `key=value` positional arg             |
 
 ### LIST and KV collections
 
 Collections are owned by the caller. Create them with `clp_list_init` / `clp_kv_init`, which use the element types the parser expects, and release them with `clp_list_destroy` / `clp_kv_destroy` when you are done:
 
 ```c
-DDynArray     files;
-DUnorderedMap env;
+d_dyn_array_t     files;
+d_unordered_map_t env;
 if (clp_list_init(&files, &err) != CLP_OK || clp_kv_init(&env, &err) != CLP_OK)
     /* CLP_ERR_ALLOC */;
 /* ... parse ... */
@@ -114,9 +114,9 @@ clp_list_destroy(&files);
 clp_kv_destroy(&env);
 ```
 
-Both init functions return `CLP_OK` or `CLP_ERR_ALLOC`. `clp.h` declares `DUnorderedMap`, so KV users only need `d_unordered_map.h` to read the map (`d_unordered_map_get`).
+Both init functions return `CLP_OK` or `CLP_ERR_ALLOC`. `clp.h` declares `d_unordered_map_t`, so KV users only need `d_unordered_map.h` to read the map (`d_unordered_map_get`).
 
-Stored `DStringView`s point into `argv` and stay valid as long as `argv` does.
+Stored `d_string_view_t`s point into `argv` and stay valid as long as `argv` does.
 
 ---
 
@@ -131,13 +131,13 @@ int main(int argc, char **argv)
 {
     (void) argc;
 
-    bool        verbose = false; /* default */
-    long        jobs    = 1;     /* default */
-    DStringView file;
-    ClpError    err;
-    Command    *root;
-    Option     *verbose_opt, *jobs_opt;
-    Operand    *file_op;
+    bool            verbose = false; /* default */
+    long            jobs    = 1;     /* default */
+    d_string_view_t file;
+    clp_error_t     err;
+    clp_command_t  *root;
+    clp_option_t   *verbose_opt, *jobs_opt;
+    clp_operand_t  *file_op;
 
     if (clp_new_command(&root, 0, "prog", "my program", NULL, NULL, &err) != CLP_OK)
     {
@@ -158,7 +158,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    Command *cmd = NULL;
+    clp_command_t *cmd = NULL;
     clp_parse_args(root, argv, &cmd); /* exits on error or --help */
 
     if (verbose)
@@ -176,19 +176,19 @@ int main(int argc, char **argv)
 
 ## Examples by feature
 
-The snippets below omit error checks on the builders for brevity; every builder returns a `ClpStatus` you should check.
+The snippets below omit error checks on the builders for brevity; every builder returns a `clp_status_t` you should check.
 
 ### Subcommands
 
 ```c
-Command *root, *add, *rm;
+clp_command_t *root, *add, *rm;
 clp_new_command(&root, 0, "prog", "description", NULL, NULL, &err);
 clp_new_command(&add, 1, "add", "add a file", NULL, NULL, &err);
 clp_new_command(&rm, 2, "rm", "remove a file", NULL, NULL, &err);
 clp_add_command_sub_command(root, add, &err);
 clp_add_command_sub_command(root, rm, &err);
 
-Command *cmd = NULL;
+clp_command_t *cmd = NULL;
 clp_parse_args(root, argv, &cmd);
 switch (cmd ? cmd->code : -1)
 {
@@ -201,8 +201,8 @@ clp_cleanup(root);
 ### Count option (`-d`, `-ddd`, `--debug`)
 
 ```c
-usize   debug = 0; /* counting starts from the initial value */
-Option *opt;
+usize         debug = 0; /* counting starts from the initial value */
+clp_option_t *opt;
 clp_new_option_count(&opt, "debug", "d", "increase debug level", &debug, false, &err);
 clp_add_command_option(root, opt, &err);
 /* after parse: debug == number of -d flags */
@@ -211,31 +211,31 @@ clp_add_command_option(root, opt, &err);
 ### List option (`--files a,b,c`)
 
 ```c
-DDynArray files;
+d_dyn_array_t files;
 clp_list_init(&files, &err);
 clp_new_option_list(&opt, "files", "f", "input files", &files, false, false, &err);
 clp_add_command_option(root, opt, &err);
-/* after parse: files holds one DStringView per item */
+/* after parse: files holds one d_string_view_t per item */
 ```
 
 ### Key=value option (`--env HOST=localhost,PORT=8080`)
 
 ```c
-DUnorderedMap env;
+d_unordered_map_t env;
 clp_kv_init(&env, &err);
 clp_new_option_kv(&opt, "env", "e", "environment variables", &env, false, false, &err);
 clp_add_command_option(root, opt, &err);
 
 /* lookup after parse */
-DStringView  key = D_STRING_VIEW_FROM_LITERAL("HOST");
-DStringView *val = d_unordered_map_get(&env, &key);
+d_string_view_t  key = D_STRING_VIEW_FROM_LITERAL("HOST");
+d_string_view_t *val = d_unordered_map_get(&env, &key);
 ```
 
 ### List operand (consumes all remaining positional args)
 
 ```c
-DDynArray files;
-Operand  *op;
+d_dyn_array_t  files;
+clp_operand_t *op;
 clp_list_init(&files, &err);
 clp_new_operand_list(&op, "files", "source files", &files, false, &err);
 clp_add_command_operand(root, op, &err);
@@ -254,7 +254,7 @@ clp_new_option(&opt, "jobs", "j", "parallel jobs", &jobs, false, false, &err);
 
 ```c
 /* registered on root, visible when any subcommand is dispatched */
-DStringView token;
+d_string_view_t token;
 clp_new_option(&opt, "token", "t", "API token", &token, true, /*global=*/true, &err);
 clp_add_command_option(root, opt, &err);
 /* prog --token abc push  and  prog push --token abc  both set token */
@@ -265,7 +265,7 @@ clp_add_command_option(root, opt, &err);
 ## Input checkers
 
 ```c
-typedef const char *(*ClpChecker)(const void *value);
+typedef const char *(*clp_checker_t)(const void *value);
 ```
 
 A checker runs on a value right after it has been converted, **before** it is written to `dest`. Return `NULL` to accept it, or a message with static lifetime to reject it: parsing then fails with `CLP_ERR_BAD_VALUE`, the message is appended to the usual `invalid value '...' for '--x'` error, and `dest` keeps its previous value.
@@ -273,8 +273,8 @@ A checker runs on a value right after it has been converted, **before** it is wr
 What `value` points to:
 
 - **SET**: the converted value, with the same type as `dest` (`const long *` for a `long` dest, ...). It is a scratch copy, not `dest` itself.
-- **LIST**: one item, as a `const DStringView *`, including each comma-separated piece of an option value.
-- **KV**: one pair, as a `const ClpKeyValue *` (`{ DStringView key; DStringView value; }`; the views are not NUL-terminated). Malformed pairs are rejected with `CLP_ERR_BAD_KV` first.
+- **LIST**: one item, as a `const d_string_view_t *`, including each comma-separated piece of an option value.
+- **KV**: one pair, as a `const clp_key_value_t *` (`{ d_string_view_t key; d_string_view_t value; }`; the views are not NUL-terminated). Malformed pairs are rejected with `CLP_ERR_BAD_KV` first.
 - Never run for bool flags or count options.
 
 ```c
@@ -286,7 +286,7 @@ static const char *jobs_range(const void *p)
 
 static const char *check_env(const void *p)
 {
-    const ClpKeyValue *kv = p;
+    const clp_key_value_t *kv = p;
     return kv->key.size <= 32 ? NULL : "key too long";
 }
 
@@ -304,7 +304,7 @@ clp_new_operand_kv_checked(&op, "vars", "variables", &vars, true, check_env, &er
 When an argument needs parsing the built-in types cannot express (an enum, a hex pattern, a set of flags, ...), use a transform. It takes **no `dest`**: it receives the raw argument plus a `ctx` pointer given at registration, and decides what to do with them — usually parse the argument and store the result through `ctx`.
 
 ```c
-typedef const char *(*ClpTransform)(void *ctx, const char *arg);
+typedef const char *(*clp_transform_t)(void *ctx, const char *arg);
 ```
 
 - `arg` is the raw, NUL-terminated argument, pointing into `argv`.
@@ -314,11 +314,11 @@ typedef const char *(*ClpTransform)(void *ctx, const char *arg);
 - SET only, no checker (the transform validates itself). Shown as `<value>` in `--help`.
 
 ```c
-typedef enum { TS_NONE, TS_ONLY, TS_ADDR } TsType;
+typedef enum { TS_NONE, TS_ONLY, TS_ADDR } ts_type_t;
 
 static const char *parse_timestamp(void *ctx, const char *arg)
 {
-    TsType *out = ctx;
+    ts_type_t *out = ctx;
     if (strcmp(arg, "tsonly") == 0)
         *out = TS_ONLY;
     else if (strcmp(arg, "tsaddr") == 0)
@@ -328,8 +328,8 @@ static const char *parse_timestamp(void *ctx, const char *arg)
     return NULL;
 }
 
-TsType ip_ts  = TS_NONE; /* defaults are the initial values, as with dest */
-TsType tcp_ts = TS_NONE;
+ts_type_t ip_ts  = TS_NONE; /* defaults are the initial values, as with dest */
+ts_type_t tcp_ts = TS_NONE;
 /* one transform, two options: each result goes to its own ctx */
 clp_new_option_transform(&opt, "ip-timestamp", NULL, "IP timestamp of type FLAG", parse_timestamp, &ip_ts, false, false, &err);
 clp_new_option_transform(&opt2, "tcp-timestamp", NULL, "TCP timestamp of type FLAG", parse_timestamp, &tcp_ts, false, false, &err);
@@ -343,7 +343,7 @@ clp_new_operand_transform(&op, "mode", "run mode", parse_mode, &mode, true, &err
 Checkers and transforms see one value at a time. Rules that span several arguments ("`-f` and `-i` are incompatible", "`--tsaddr` needs `--timestamp`") go in a validator, given to `clp_new_command` with a `ctx`:
 
 ```c
-typedef const char *(*ClpValidator)(void *ctx);
+typedef const char *(*clp_validator_t)(void *ctx);
 ```
 
 - Runs once the command's arguments are all parsed and its required arguments are present. It does not run if parsing failed earlier, and it runs even when the command got no arguments.
@@ -352,17 +352,17 @@ typedef const char *(*ClpValidator)(void *ctx);
 - Return `NULL` to accept, or a message with static lifetime to reject: parsing fails with `CLP_ERR_VALIDATOR`, `err->command` is the command and the message reads `command <name>: <your message>`.
 
 ```c
-typedef struct { Option *flood, *interval; } PingRules;
+typedef struct { clp_option_t *flood, *interval; } ping_rules_t;
 
 static const char *check_ping(void *ctx)
 {
-    PingRules *r = ctx;
+    ping_rules_t *r = ctx;
     if (r->flood->value_set && r->interval->value_set)
         return "-f and -i are incompatible";
     return NULL;
 }
 
-PingRules rules;
+ping_rules_t rules;
 clp_new_command(&root, 0, "ping", "send ICMP ECHO_REQUEST", check_ping, &rules, &err);
 clp_new_option(&rules.flood, "flood", "f", "flood ping", &flood, false, false, &err);
 clp_new_option(&rules.interval, "interval", "i", "wait between packets", &interval, false, false, &err);
@@ -375,27 +375,27 @@ clp_new_option(&rules.interval, "interval", "i", "wait between packets", &interv
 ### Lifecycle
 
 ```c
-/* Builders never exit: they return a ClpStatus and fill err (may be NULL).
+/* Builders never exit: they return a clp_status_t and fill err (may be NULL).
    Constructors set *out to NULL on failure. */
-ClpStatus clp_new_command(Command **out, int code, char *name, char *description, ClpValidator validator, void *ctx, ClpError *err);
-ClpStatus clp_add_command_option(Command *command, Option *option, ClpError *err);
-ClpStatus clp_add_command_operand(Command *command, Operand *operand, ClpError *err);
-ClpStatus clp_add_command_sub_command(Command *command, Command *sub_command, ClpError *err);
+clp_status_t clp_new_command(clp_command_t **out, int code, char *name, char *description, clp_validator_t validator, void *ctx, clp_error_t *err);
+clp_status_t clp_add_command_option(clp_command_t *command, clp_option_t *option, clp_error_t *err);
+clp_status_t clp_add_command_operand(clp_command_t *command, clp_operand_t *operand, clp_error_t *err);
+clp_status_t clp_add_command_sub_command(clp_command_t *command, clp_command_t *sub_command, clp_error_t *err);
 
-ClpStatus   clp_try_parse_args(Command *root, char **argv, Command **command, ClpError *err); /* never exits */
-void        clp_parse_args(Command *root, char **argv, Command **command);                   /* exits on error */
-void        clp_print_error(FILE *stream, const ClpError *err);
-const char *clp_status_to_str(ClpStatus code);
+clp_status_t clp_try_parse_args(clp_command_t *root, char **argv, clp_command_t **command, clp_error_t *err); /* never exits */
+void         clp_parse_args(clp_command_t *root, char **argv, clp_command_t **command);                   /* exits on error */
+void         clp_print_error(FILE *stream, const clp_error_t *err);
+const char  *clp_status_to_str(clp_status_t code);
 
-void clp_cleanup(Command *root);         /* frees the tree and everything added to it; never touches dests */
-void clp_free_option(Option *option);    /* only for an option not added to a command (NULL is a no-op) */
-void clp_free_operand(Operand *operand); /* only for an operand not added to a command (NULL is a no-op) */
+void clp_cleanup(clp_command_t *root);         /* frees the tree and everything added to it; never touches dests */
+void clp_free_option(clp_option_t *option);    /* only for an option not added to a command (NULL is a no-op) */
+void clp_free_operand(clp_operand_t *operand); /* only for an operand not added to a command (NULL is a no-op) */
 
 /* LIST / KV collections (caller-owned) */
-ClpStatus clp_list_init(DDynArray *list, ClpError *err);    /* CLP_OK or CLP_ERR_ALLOC */
-ClpStatus clp_kv_init(DUnorderedMap *map, ClpError *err);   /* CLP_OK or CLP_ERR_ALLOC */
-void      clp_list_destroy(DDynArray *list);
-void      clp_kv_destroy(DUnorderedMap *map);
+clp_status_t clp_list_init(d_dyn_array_t *list, clp_error_t *err);    /* CLP_OK or CLP_ERR_ALLOC */
+clp_status_t clp_kv_init(d_unordered_map_t *map, clp_error_t *err);   /* CLP_OK or CLP_ERR_ALLOC */
+void         clp_list_destroy(d_dyn_array_t *list);
+void         clp_kv_destroy(d_unordered_map_t *map);
 ```
 
 Ownership: an option/operand belongs to the command once `clp_add_command_*` succeeds, and `clp_cleanup` frees it. If the add fails it is still yours — release it with `clp_free_option` / `clp_free_operand`.
@@ -403,20 +403,20 @@ Ownership: an option/operand belongs to the command once `clp_add_command_*` suc
 ### Lookup
 
 ```c
-Option  *clp_get_option_by_short(Command *command, char shrt);
-Option  *clp_get_option_by_long (Command *command, DStringView lng);
-Operand *clp_get_operand        (Command *command, DStringView name);
+clp_option_t  *clp_get_option_by_short(clp_command_t *command, char shrt);
+clp_option_t  *clp_get_option_by_long (clp_command_t *command, d_string_view_t lng);
+clp_operand_t *clp_get_operand        (clp_command_t *command, d_string_view_t name);
 ```
 
 ### Option macros
 
-Every macro takes `out` first and `err` last, and returns a `ClpStatus`.
+Every macro takes `out` first and `err` last, and returns a `clp_status_t`.
 
 ```c
 clp_new_option          (out, ln, sn, desc, dest, required, global, err)          /* SET; type from dest */
 clp_new_option_count    (out, ln, sn, desc, dest, global, err)                    /* dest: usize * */
-clp_new_option_list     (out, ln, sn, desc, dest, required, global, err)          /* dest: DDynArray * */
-clp_new_option_kv       (out, ln, sn, desc, dest, required, global, err)          /* dest: DUnorderedMap * */
+clp_new_option_list     (out, ln, sn, desc, dest, required, global, err)          /* dest: d_dyn_array_t * */
+clp_new_option_kv       (out, ln, sn, desc, dest, required, global, err)          /* dest: d_unordered_map_t * */
 
 clp_new_option_checked     (out, ln, sn, desc, dest, required, global, checker, err)
 clp_new_option_list_checked(out, ln, sn, desc, dest, required, global, checker, err)
@@ -429,8 +429,8 @@ clp_new_option_transform(out, ln, sn, desc, transform, ctx, required, global, er
 
 ```c
 clp_new_operand     (out, name, desc, dest, required, err)                        /* SET; type from dest */
-clp_new_operand_list(out, name, desc, dest, required, err)                        /* dest: DDynArray * */
-clp_new_operand_kv  (out, name, desc, dest, required, err)                        /* dest: DUnorderedMap * */
+clp_new_operand_list(out, name, desc, dest, required, err)                        /* dest: d_dyn_array_t * */
+clp_new_operand_kv  (out, name, desc, dest, required, err)                        /* dest: d_unordered_map_t * */
 
 clp_new_operand_checked     (out, name, desc, dest, required, checker, err)
 clp_new_operand_list_checked(out, name, desc, dest, required, checker, err)
@@ -441,32 +441,32 @@ clp_new_operand_transform(out, name, desc, transform, ctx, required, err)       
 
 ### Inserting a table of options / operands
 
-`clp_insert_opts` and `clp_insert_operands` create and register a whole array in one call. Each `ClpOptionInfo` / `ClpOperandInfo` holds the arguments of `clp_new_option_raw` / `clp_new_operand_raw`, with the same rules (and, like the raw constructors, no check that `dest` matches `type`).
+`clp_insert_opts` and `clp_insert_operands` create and register a whole array in one call. Each `clp_option_info_t` / `clp_operand_info_t` holds the arguments of `clp_new_option_raw` / `clp_new_operand_raw`, with the same rules (and, like the raw constructors, no check that `dest` matches `type`).
 
 ```c
-typedef struct ClpOptionInfo {
+typedef struct clp_option_info_t {
     char *long_name; char *short_name; char *description; void *dest;
-    OptAction action; Type type; bool required; bool global;
-    ClpChecker checker; ClpTransform transform;
-} ClpOptionInfo;
+    clp_opt_action_t action; clp_type_t type; bool required; bool global;
+    clp_checker_t checker; clp_transform_t transform;
+} clp_option_info_t;
 
-typedef struct ClpOperandInfo {
+typedef struct clp_operand_info_t {
     char *name; char *description; void *dest;
-    OperandAction action; Type type; bool required;
-    ClpChecker checker; ClpTransform transform;
-} ClpOperandInfo;
+    clp_operand_action_t action; clp_type_t type; bool required;
+    clp_checker_t checker; clp_transform_t transform;
+} clp_operand_info_t;
 
-ClpStatus clp_insert_opts(Command *command, const ClpOptionInfo *infos, usize count, ClpError *err);
-ClpStatus clp_insert_operands(Command *command, const ClpOperandInfo *infos, usize count, ClpError *err);
+clp_status_t clp_insert_opts(clp_command_t *command, const clp_option_info_t *infos, usize count, clp_error_t *err);
+clp_status_t clp_insert_operands(clp_command_t *command, const clp_operand_info_t *infos, usize count, clp_error_t *err);
 ```
 
 ```c
-ClpOptionInfo opts[] = {
-    {"verbose", "v", "verbose output", &verbose, OPT_ACT_SET, TYPE_BOOL, false, false, NULL, NULL},
-    {"jobs",    "j", "worker count",   &jobs,    OPT_ACT_SET, TYPE_LONG, false, false, jobs_range, NULL},
+clp_option_info_t opts[] = {
+    {"verbose", "v", "verbose output", &verbose, CLP_OPT_ACT_SET, CLP_TYPE_BOOL, false, false, NULL, NULL},
+    {"jobs",    "j", "worker count",   &jobs,    CLP_OPT_ACT_SET, CLP_TYPE_LONG, false, false, jobs_range, NULL},
 };
-ClpOperandInfo ops[] = {
-    {"host", "host to reach", &host, OPERAND_ACT_SET, TYPE_STR, true, NULL, NULL},
+clp_operand_info_t ops[] = {
+    {"host", "host to reach", &host, CLP_OPERAND_ACT_SET, CLP_TYPE_STR, true, NULL, NULL},
 };
 if (clp_insert_opts(root, opts, sizeof(opts) / sizeof(*opts), &err) != CLP_OK ||
     clp_insert_operands(root, ops, sizeof(ops) / sizeof(*ops), &err) != CLP_OK)
@@ -480,22 +480,22 @@ Entries are inserted in order and insertion stops at the first failure: `err` is
 The macros cover every combination; the raw constructors do not check that `dest` matches `type`, so prefer the macros.
 
 ```c
-ClpStatus clp_new_option_raw(Option **out, char *long_name, char *short_name, char *description,
-                             void *dest, OptAction action, Type type, bool required, bool global,
-                             ClpChecker checker, ClpTransform transform, ClpError *err);
+clp_status_t clp_new_option_raw(clp_option_t **out, char *long_name, char *short_name, char *description,
+                             void *dest, clp_opt_action_t action, clp_type_t type, bool required, bool global,
+                             clp_checker_t checker, clp_transform_t transform, clp_error_t *err);
 
-ClpStatus clp_new_operand_raw(Operand **out, char *name, char *description,
-                              void *dest, OperandAction action, Type type, bool required,
-                              ClpChecker checker, ClpTransform transform, ClpError *err);
+clp_status_t clp_new_operand_raw(clp_operand_t **out, char *name, char *description,
+                              void *dest, clp_operand_action_t action, clp_type_t type, bool required,
+                              clp_checker_t checker, clp_transform_t transform, clp_error_t *err);
 ```
 
-A `transform` requires `TYPE_CUSTOM` (and `TYPE_CUSTOM` requires a transform), the SET action, and no checker; `dest` is then passed to the transform as its `ctx` and may be `NULL`. Any other combination returns `CLP_ERR_INVALID_TYPE`.
+A `transform` requires `CLP_TYPE_CUSTOM` (and `CLP_TYPE_CUSTOM` requires a transform), the SET action, and no checker; `dest` is then passed to the transform as its `ctx` and may be `NULL`. Any other combination returns `CLP_ERR_INVALID_TYPE`.
 
 ---
 
 ## Errors
 
-Builders and `clp_try_parse_args` never exit: they return a `ClpStatus` and fill `ClpError` (print it with `clp_print_error`). `clp_parse_args` prints the same message to **stderr** and calls `exit(EXIT_FAILURE)` instead. Passing `NULL` where a parameter must not be `NULL` is a programming error caught by `assert`.
+Builders and `clp_try_parse_args` never exit: they return a `clp_status_t` and fill `clp_error_t` (print it with `clp_print_error`). `clp_parse_args` prints the same message to **stderr** and calls `exit(EXIT_FAILURE)` instead. Passing `NULL` where a parameter must not be `NULL` is a programming error caught by `assert`.
 
 ### At registration (builders)
 
@@ -504,8 +504,8 @@ Builders and `clp_try_parse_args` never exit: they return a `ClpStatus` and fill
 | Long option name starts with `-` or `_`, or contains invalid chars | `CLP_ERR_INVALID_NAME`                 |
 | Short option name is not alphanumeric or `?`                       | `CLP_ERR_INVALID_NAME`                 |
 | Long option name is `"help"` (reserved)                            | `CLP_ERR_RESERVED_NAME`                |
-| `OPT_ACT_COUNT` paired with a type other than `TYPE_USIZE`         | `CLP_ERR_INVALID_TYPE`                 |
-| Transform / `TYPE_CUSTOM` / checker combination not allowed        | `CLP_ERR_INVALID_TYPE`                 |
+| `CLP_OPT_ACT_COUNT` paired with a type other than `CLP_TYPE_USIZE`         | `CLP_ERR_INVALID_TYPE`                 |
+| Transform / `CLP_TYPE_CUSTOM` / checker combination not allowed        | `CLP_ERR_INVALID_TYPE`                 |
 | Duplicate long or short option name on the same command            | `CLP_ERR_DUPLICATE`                    |
 | Command would have both operands and subcommands                   | `CLP_ERR_CONFLICT`                     |
 | Required operand registered after an optional one                  | `CLP_ERR_OPERAND_ORDER`                |
